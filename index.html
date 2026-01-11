@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta name="description" content="Course project for 25WS Data Visualization" />
+    <meta charset="utf-8" />
+    <title>Group 6 - Flight Pattern Analysis</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="author" content="Group 6 - Hsuan Lien & Kai-Hui You" />
+
+    <link rel="stylesheet" href="style.css" />
+</head>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://unpkg.com/topojson-client@3"></script>
+
+<script type="module" src="./js/main.js"></script>
+
+<body>
+    <!-- Top navigation bar -->
+    <header class="topbar">
+        <nav class="nav" aria-label="Main navigation">
+            <button class="nav-item is-active" data-view="routing" type="button">Routing</button>
+            <button class="nav-item" data-view="elevation" type="button">Elevation</button>
+            <button class="nav-item" data-view="hubs" type="button">Hubs</button>
+            <button class="nav-item" data-view="distance" type="button">Distance</button>
+            <button class="nav-item" data-view="curvature" type="button">Curvature</button>
+        </nav>
+    </header>
+
+    <main class="page">
+        <!-- Title of selected function -->
+        <section class="section-title">
+            <h1 id="view-title">Routing</h1>
+            <p id="view-subtitle" class="subtitle">
+                Pick a tab to switch the view. The geo map area stays fixed; the right panel changes per view.
+            </p>
+        </section>
+
+        <!-- Visualization layout: map + side charts -->
+        <section class="viz-layout">
+            <!-- Left: fixed geo map area -->
+            <div class="map-panel">
+                <div class="panel-header">
+                    <h2 class="panel-title">Geo Map</h2>
+                    <div class="panel-tools">
+                        <!-- optional: add controls later -->
+                    </div>
+                </div>
+
+                <div id="map-wrap" class="panel-body">
+                    <!-- One map SVG per view (show/hide) -->
+                    <svg id="map-svg-routing" class="map-svg is-visible" role="img" aria-label="Routing map"></svg>
+                    <svg id="map-svg-elevation" class="map-svg" role="img" aria-label="Elevation map"></svg>
+                    <svg id="map-svg-hubs" class="map-svg" role="img" aria-label="Hubs map"></svg>
+                    <svg id="map-svg-distance" class="map-svg" role="img" aria-label="Distance map"></svg>
+                    <svg id="map-svg-curvature" class="map-svg" role="img" aria-label="Curvature map"></svg>
+
+                </div>
+            </div>
+
+            <!-- Right: charts panel changes per view -->
+            <aside class="side-panel">
+                <div class="panel-header">
+                    <h2 class="panel-title">Details</h2>
+                </div>
+
+                <div class="panel-body side-stack">
+                    <!-- View-specific blocks (show/hide) -->
+                    <section class="view-block is-visible" data-view-block="routing">
+                        <h3 class="block-title">Trip Planner</h3>
+
+                        <label class="form-label" for="routing-origin">Departing airport</label>
+                        <select id="routing-origin" class="select">
+                            <option value="" selected disabled>Select an airport…</option>
+                        </select>
+                        <p class="hint">
+                            Click an airport on the map to choose the next hop.
+                            When your final airport equals the first airport, the route is complete.
+                        </p>
+
+                        <h4 class="stack-title">Selected airports</h4>
+                        <ol id="routing-stack" class="route-stack">
+                            <!-- filled by JS -->
+                        </ol>
+
+                        <div class="route-actions">
+                            <button id="routing-reset" class="btn" type="button">Reset route</button>
+                        </div>
+
+                    </section>
+
+                    <section class="view-block" data-view-block="elevation">
+                        <h3 class="block-title">Elevation charts</h3>
+                        <div class="chart-slot"><svg id="elevation-chart-1"></svg></div>
+                        <div class="chart-slot"><svg id="elevation-chart-2"></svg></div>
+                        <div class="chart-slot"><svg id="elevation-chart-3"></svg></div>
+                    </section>
+
+                    <section class="view-block" data-view-block="hubs">
+                        <h3 class="block-title">Hubs charts</h3>
+                        <div class="chart-slot"><svg id="hubs-chart-1"></svg></div>
+                    </section>
+
+                    <section class="view-block" data-view-block="distance">
+                        <h3 class="block-title">Distance charts</h3>
+                        <div class="chart-slot"><svg id="distance-chart-1"></svg></div>
+                        <div class="chart-slot"><svg id="distance-chart-2"></svg></div>
+                    </section>
+
+                    <section class="view-block" data-view-block="curvature">
+                        <h3 class="block-title">Curvature charts</h3>
+                        <div class="chart-slot"><svg id="curvature-chart-1"></svg></div>
+                    </section>
+                </div>
+            </aside>
+        </section>
+
+        <!-- Observations area -->
+        <section id="observations" class="observations">
+            <h2>Observations</h2>
+            <!-- elevation -->
+            <div class="obs-view" data-obs-view="elevation">
+                <div class="obs-box" contenteditable="true" aria-label="Elevation observations editor">
+                    <p><b>Elevation notes</b></p>
+                    <ul>
+                        <li>Higher-altitude routes may indicate long-haul patterns.</li>
+                        <li>Check if some airports consistently have higher climb profiles.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- hubs -->
+            <div class="obs-view" data-obs-view="hubs">
+                <div class="obs-box" contenteditable="true" aria-label="Hubs observations editor">
+                    <p><b>Hubs notes</b></p>
+                    <ul>
+                        <li>Which airports dominate departures?</li>
+                        <li>Do hubs differ by region?</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- distance -->
+            <div class="obs-view" data-obs-view="distance">
+                <div class="obs-box" contenteditable="true" aria-label="Distance observations editor">
+                    <p><b>Distance notes</b></p>
+                    <ul>
+                        <li>Compare short-haul vs long-haul clusters.</li>
+                        <li>Look for outliers (very long routes).</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- curvature -->
+            <div class="obs-view" data-obs-view="curvature">
+                <div class="obs-box" contenteditable="true" aria-label="Curvature observations editor">
+                    <p><b>Curvature notes</b></p>
+                    <ul>
+                        <li>Great-circle paths bend at higher latitudes.</li>
+                        <li>Polar-like routing may appear curved on the map.</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+    </main>
+</body>
+
+</html>

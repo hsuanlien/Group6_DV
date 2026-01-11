@@ -1,0 +1,308 @@
+:root {
+    --sky: #8ec5ff;
+    --sky-dark: #5aa7ff;
+    --bg: #f6f8fb;
+    --panel: #ffffff;
+    --border: #d9e2ef;
+    --text: #1b2430;
+    --muted: #5b6b7a;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    height: 100%;
+    margin: 0;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+    color: var(--text);
+    background: var(--bg);
+}
+
+/* --- Top bar --- */
+.topbar {
+    width: 100%;
+    background: var(--sky);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.nav {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    width: 100%;
+}
+
+.nav-item {
+    appearance: none;
+    border: none;
+    background: transparent;
+    padding: 14px 10px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #0b2545;
+    cursor: pointer;
+    transition: background 120ms ease, transform 120ms ease;
+}
+
+.nav-item:hover {
+    background: rgba(255, 255, 255, 0.35);
+}
+
+.nav-item.is-active {
+    background: rgba(255, 255, 255, 0.6);
+    border-bottom: 3px solid var(--sky-dark);
+}
+
+/* --- Page layout --- */
+.page {
+    max-width: 1200px;
+    margin: 18px auto 40px auto;
+    padding: 0 16px;
+}
+
+.section-title h1 {
+    margin: 10px 0 6px 0;
+    font-size: 28px;
+}
+
+.subtitle {
+    margin: 0 0 16px 0;
+    color: var(--muted);
+    line-height: 1.35;
+}
+
+/* --- Viz layout: left map 5/9, right charts 3/9 --- */
+.viz-layout {
+    display: grid;
+    grid-template-columns: 5fr 3fr;
+    gap: 14px;
+    align-items: start;
+}
+
+/* panels */
+.map-panel,
+.side-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+}
+
+.panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    background: #fbfdff;
+}
+
+.panel-title {
+    margin: 0;
+    font-size: 15px;
+}
+
+.panel-body {
+    padding: 12px;
+}
+
+/* fixed map size across all functions */
+#map-wrap {
+    height: 520px;
+    /* <- fixed map height */
+    width: 100%;
+}
+
+.map-svg {
+    display: none;
+    width: 100%;
+    height: 100%;
+}
+
+.map-svg.is-visible {
+    display: block;
+}
+
+/* placeholder styling inside SVG */
+.placeholder-text {
+    font-size: 14px;
+    fill: #2a3b50;
+}
+
+#map-svg-routing .country {
+  fill: #eef5ff;
+  stroke: #c7daf7;
+}
+
+/* right-side stacked charts */
+.side-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.view-block {
+    display: none;
+}
+
+.view-block.is-visible {
+    display: block;
+}
+
+.block-title {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    color: var(--muted);
+}
+
+.chart-slot {
+    border: 1px dashed #c9d7ea;
+    border-radius: 12px;
+    height: 140px;
+    /* chart placeholder height */
+    margin-bottom: 10px;
+    background: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.chart-slot svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* Observations area */
+.observations {
+    margin-top: 16px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px;
+}
+
+.observations h2 {
+    margin: 0 0 10px 0;
+    font-size: 18px;
+}
+
+.is-hidden {
+  display: none !important;
+}
+
+.obs-view {
+  display: none;
+}
+.obs-view.is-visible {
+  display: block;
+}
+
+.obs-box {
+    min-height: 140px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px 12px;
+    background: #fff;
+    color: var(--text);
+}
+
+.obs-box:focus {
+    outline: 2px solid rgba(90, 167, 255, 0.35);
+    border-color: rgba(90, 167, 255, 0.7);
+}
+
+/* Responsive: stack panels on small screens */
+@media (max-width: 900px) {
+    .viz-layout {
+        grid-template-columns: 1fr;
+    }
+
+    #map-wrap {
+        height: 420px;
+    }
+
+    .nav {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* routing */
+.form-label {
+    display: block;
+    margin: 6px 0 6px 0;
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.select {
+    width: 100%;
+    padding: 10px 10px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #fff;
+    font-size: 14px;
+}
+
+.route-actions {
+    margin-top: 10px;
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.btn {
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    background: #fff;
+    border-radius: 12px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.btn:hover {
+    background: #f3f7ff;
+}
+
+.stack-title {
+    margin: 14px 0 8px 0;
+    font-size: 14px;
+    color: var(--muted);
+}
+
+.route-stack {
+    margin: 0;
+    padding-left: 18px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #fff;
+    min-height: 120px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+}
+
+.route-stack li {
+    padding: 4px 10px 4px 0;
+    font-size: 14px;
+}
+
+.hint {
+    margin: 10px 0 0 0;
+    font-size: 12.5px;
+    color: var(--muted);
+    line-height: 1.35;
+}
+
+/* routing europe basemap */
+#map-svg-routing .country {
+  fill: #f3f7ff;
+  stroke: #c7daf7;
+  stroke-width: 0.8;
+}
+#map-svg-routing .graticule {
+  fill: none;
+  stroke: rgba(0,0,0,0.08);
+  stroke-width: 0.6;
+}

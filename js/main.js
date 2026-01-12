@@ -1,3 +1,4 @@
+import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
 import { routing } from "./routing.js";
 import { elevation } from "./elevation.js";
 import { hubs } from "./hubs.js";
@@ -69,18 +70,20 @@ function getCtx(viewKey) {
   };
 }
 
-// ----- core -----
 async function render(viewKey) {
   const view = VIEWS[viewKey];
   const ctx = getCtx(viewKey);
 
-  // map
+  if (!ctx.width || !ctx.height || ctx.width < 10 || ctx.height < 10) {
+    console.warn("Skip render: invalid size", ctx);
+    return;
+  }
+
   sizeMapSvg(viewKey);
   await view.renderMap(ctx);
-
-  // side
   await view.renderSide(ctx);
 }
+
 
 async function setActiveView(viewKey) {
   activeViewKey = viewKey;
@@ -104,16 +107,15 @@ async function setActiveView(viewKey) {
   await render(viewKey);
 }
 
-// events
 navItems.forEach((btn) => {
-  btn.addEventListener("click", () => setActiveView(btn.dataset.view));
+  btn.addEventListener("click", () => setActiveView(btn.dataset.view).catch(console.error));
 });
 
-window.addEventListener("resize", async () => {
+window.addEventListener("resize", () => {
   setAllMapSvgSizes();
-  await render(activeViewKey);
+  render(activeViewKey).catch(console.error);
 });
 
 // init
 setAllMapSvgSizes();
-setActiveView(activeViewKey);
+setActiveView(activeViewKey).catch(console.error);

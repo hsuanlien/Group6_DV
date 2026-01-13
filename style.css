@@ -122,7 +122,7 @@ body {
 /* fixed map size across all functions */
 #map-wrap {
     width: 100%;
-    height: clamp(420px, 60vh, 620px);
+    height: clamp(500px, 60vh, 620px);
     /* height: 520px;
     /* <- fixed map height */
     /* width: 100%; */ 

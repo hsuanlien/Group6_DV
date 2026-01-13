@@ -16,7 +16,7 @@ const VIEWS = {
 
 const VIEW_META = {
   routing: { title: "Build and visualize your European flight journey in seconds!", subtitle: "Choose a starting airport, explore reachable destinations, and automatically visualize the entire journey on the map." },
-  elevation: { title: "Elevation", subtitle: "Compare flight altitude / elevation-related patterns (if available)." },
+  elevation: { title: "Elevation Insights for Air Networks", subtitle: "Explore whether higher-altitude airports show different connectivity patterns and aircraft mix compared to lower-elevation airports." },
   hubs: { title: "Hubs", subtitle: "Identify major hubs and how connectivity concentrates." },
   distance: { title: "Distance", subtitle: "Global patterns of short-, mid-, and long-haul routes." },
   curvature: { title: "Curvature", subtitle: "Show great-circle curvature tendencies across routes." },

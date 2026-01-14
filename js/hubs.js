@@ -75,8 +75,9 @@ async function renderMap(ctx) {
 
   svg.selectAll("*").remove();
 
-  const projection = d3.geoNaturalEarth1();
-  projection.fitSize([width, height], { type: "Sphere" });
+  const projection = d3.geoNaturalEarth1()
+    .scale(125)                                     // 👈 fixed globe size
+    .translate([width / 2 - 14, height / 2 + 45]);  // center in panel
   const geoPath = d3.geoPath(projection);
 
   // Sphere
@@ -132,7 +133,7 @@ async function renderMap(ctx) {
   //   .attr("stroke-opacity", ROUTE_OPACITY)
   //   .attr("stroke-width", ROUTE_WIDTH)
   //   .attr("d", (d) => geoPath(greatCircleLineString(d.src, d.dst, 30)));
-   // 供 tooltip clamp 用：sphere 真正的可視範圍（不是整個 svg）
+  // 供 tooltip clamp 用：sphere 真正的可視範圍（不是整個 svg）
   svg.property("__sphereBounds__", geoPath.bounds({ type: "Sphere" }));
 
   // ---------------------------
@@ -545,7 +546,7 @@ function drawHubLegend(svg, geoPath, maxCount, rScale) {
     cx += 70;
   });
 
-    // ✅ 記錄 legend 的 bbox（供 tooltip 避讓）
+  // ✅ 記錄 legend 的 bbox（供 tooltip 避讓）
   const lb = g.node().getBBox();
   const t = g.attr("transform"); // translate(x,y)
   const m = /translate\(([-\d.]+),\s*([-\d.]+)\)/.exec(t);
@@ -559,7 +560,7 @@ function drawHubLegend(svg, geoPath, maxCount, rScale) {
     h: lb.height,
   });
 
-  
+
 }
 
 // ---------- safety cap (if utilities capRoutes not present) ----------

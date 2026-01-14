@@ -98,7 +98,7 @@ function sampleRoutesStratified(routesAll, limit) {
     long: routesAll.filter(r => r.distance_class === "long"),
   };
 
-  for (const k of ["short","mid","long"]) byClass[k] = d3.shuffle(byClass[k]);
+  for (const k of ["short", "mid", "long"]) byClass[k] = d3.shuffle(byClass[k]);
 
   return [
     ...byClass.short.slice(0, quota.short),
@@ -116,8 +116,9 @@ async function renderMap(ctx) {
 
   svg.selectAll("*").remove();
 
-  const projection = d3.geoNaturalEarth1();
-  projection.fitSize([width, height], { type: "Sphere" });
+  const projection = d3.geoNaturalEarth1()
+    .scale(125)                                     // 👈 fixed globe size
+    .translate([width / 2 - 14, height / 2 + 45]);  // center in panel
   const geoPath = d3.geoPath(projection);
 
   // sphere

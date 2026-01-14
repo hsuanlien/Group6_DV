@@ -483,7 +483,7 @@ function formatHubTooltip(d) {
 function drawHubLegend(svg, geoPath, maxCount, rScale) {
   const boxW = 250;
   const boxH = 92;
-  // search here---------------------------------------------------------------
+  // @@@ here---------------------------------------------------------------
   // how tight to the panel edges
   const topPad = 2;     // 👈 closer to upper border
   const rightPad = 6;   // 👈 closer to right border

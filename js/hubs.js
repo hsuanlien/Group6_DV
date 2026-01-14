@@ -481,17 +481,22 @@ function formatHubTooltip(d) {
 
 // ---------- legend (clearer) ----------
 function drawHubLegend(svg, geoPath, maxCount, rScale) {
-  const boxW = 260;
+  const boxW = 250;
   const boxH = 92;
-  const pad = 18;
+  // search here---------------------------------------------------------------
+  // how tight to the panel edges
+  const topPad = 2;     // 👈 closer to upper border
+  const rightPad = 6;   // 👈 closer to right border
 
-  const [[x0, y0], [x1, y1]] = geoPath.bounds({ type: "Sphere" });
-  const x = Math.max(x0 + pad, x1 - boxW - pad);
-  const y = Math.max(y0 + pad, y0 + pad);
+  // ✅ use the SVG viewport instead of sphere bounds
+  const width = +svg.attr("width");
+  const x = Math.max(0, width - boxW - rightPad - 20);
+  const y = Math.max(0, topPad);
 
   const g = svg.append("g")
     .attr("class", "hub-legend")
     .attr("transform", `translate(${x},${y})`);
+  // -----------------------------------------------------------
 
   g.append("rect")
     .attr("width", boxW)

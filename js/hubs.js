@@ -36,7 +36,7 @@ const HUB_FADE_OPACITY = 0.12;
 const HUB_DEFAULT_OPACITY = 0.8;
 
 const MAX_ROUTES_ON_MAP = 5000; // ✅ show “all routes” but cap to keep smooth
-const TOP_HUBS_FOR_BAR = 12;
+const TOP_HUBS_FOR_BAR = 10;
 const HUBS_FOR_MAP = 200; // ✅ show more hubs on map (not just top 60)
 
 const viewState = {
@@ -191,11 +191,19 @@ async function renderSide(ctx) {
   const svgEl = root?.querySelector("#hubs-chart-1");
   if (!svgEl) return;
 
+  // ✅ 只改「小圖表格」高度，不動右側大框
+  // 10列 + 標題 + x軸：大約 300~340px 最舒適
+  const slot = svgEl.parentElement; // .chart-slot
+  if (slot) {
+    slot.style.height = "320px";     // 👈 你也可以 300 / 340 看視覺
+  }
+
   d3.select(svgEl).selectAll("*").remove();
 
   const data = viewState.hubsTop || [];
   renderHubsBarChart(svgEl, data);
 }
+
 
 // ---------- bar chart ----------
 function getChartSize(svgEl, fallbackW = 420, fallbackH = 320) {
@@ -210,28 +218,199 @@ function truncateLabel(s, maxLen = 18) {
   const str = String(s ?? "");
   return str.length > maxLen ? str.slice(0, maxLen - 1) + "…" : str;
 }
-
 function renderHubsBarChart(svgEl, hubs) {
+  const TOP_N = 10;
+  const shown = (hubs || []).slice(0, TOP_N);
+
   const { w, h } = getChartSize(svgEl, 460, 330);
 
-  // ✅ build labels first
-  const labels = hubs.map((d) => {
+  // ====== layout ======
+  const rowH = 22;              // 每列高度（含行距感）
+  const paddingBand = 0.35;     // 你覺得舒服的行距
+  const headerH = 26;           // 標題列
+  const xAxisH = 26;            // x 軸
+  const marginRight = 18;
+
+  // 左邊 margin：依 label 長度估計（保留你的方法）
+  const labels = shown.map((d) => {
     const city = d?.airport?.city ? ` (${d.airport.city})` : "";
     return `${d.iata}${city}`;
   });
-
-  // ✅ auto margin-left based on label length (rough estimate)
   const approxMaxChars = d3.max(labels, (s) => s.length) || 10;
-  const autoLeft = Math.min(240, Math.max(140, Math.round(approxMaxChars * 6.5)));
+  const marginLeft = Math.min(220, Math.max(120, Math.round(approxMaxChars * 6.2)));
 
-  const margin = { top: 28, right: 18, bottom: 28, left: autoLeft };
-  const innerW = w - margin.left - margin.right;
-  const innerH = h - margin.top - margin.bottom;
+  const margin = { top: headerH, right: marginRight, bottom: xAxisH, left: marginLeft };
+
+  const innerW = Math.max(10, w - margin.left - margin.right);
+  const innerH = Math.max(10, h - margin.top - margin.bottom);
+
+  // 「完整10列需要的高度」（用於scroll內容高度）
+  const neededH = Math.max(innerH, Math.round(shown.length * rowH));
 
   const svg = d3.select(svgEl)
     .attr("width", "100%")
     .attr("height", "100%")
     .attr("viewBox", `0 0 ${w} ${h}`);
+
+  svg.selectAll("*").remove();
+
+  // ====== title ======
+  svg.append("text")
+    .attr("x", 10)
+    .attr("y", 18)
+    .attr("font-size", 12)
+    .attr("fill", "#374151")
+    .attr("font-weight", 600)
+    .text("Top departing hubs (Top 10)");
+
+  // ====== main group ======
+  const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+  // x scale（用 shown）
+  const x = d3.scaleLinear()
+    .domain([0, d3.max(shown, (d) => d.count) || 1])
+    .nice()
+    .range([0, innerW]);
+
+  // x axis（固定在底部，不捲動）
+  g.append("g")
+    .attr("transform", `translate(0,${innerH})`)
+    .call(d3.axisBottom(x).ticks(3))
+    .call((sel) => sel.selectAll("text").attr("fill", "#6b7280").attr("font-size", 10))
+    .call((sel) => sel.selectAll("path,line").attr("stroke", "#e5e7eb"));
+
+  // ====== Scrollable plot area via foreignObject ======
+  // 可視高度 = innerH；內容高度 = neededH（>= innerH 時就可捲動）
+  const fo = g.append("foreignObject")
+    .attr("x", -margin.left)     // foreignObject 裡我們用 HTML 來包住整個左邊軸＋bar區
+    .attr("y", 0)
+    .attr("width", w)            // 讓它吃整個 SVG 寬（包含左邊 y 軸）
+    .attr("height", innerH);
+
+  // 建立 scroll container
+  const div = fo.append("xhtml:div")
+    .style("width", `${w}px`)
+    .style("height", `${innerH}px`)
+    .style("overflow-y", "auto")
+    .style("overflow-x", "hidden");
+
+  // 內容 SVG（用來畫 y 軸 + bars + values），高度是 neededH
+  const innerSvg = div.append("svg")
+    .attr("width", w)
+    .attr("height", neededH);
+
+  // 在 innerSvg 內建立對應的 group（位置同主圖 margin）
+  const gg = innerSvg.append("g")
+    .attr("transform", `translate(${margin.left},0)`); // y=0，因為 scroll 內容本身從0開始
+
+  // y scale：用 neededH 來分配 band
+  const y = d3.scaleBand()
+    .domain(shown.map((d) => d.iata))
+    .range([0, neededH])
+    .padding(paddingBand);
+
+  // y axis（會跟著內容一起捲）
+  const yAxis = d3.axisLeft(y).tickFormat((iata) => {
+    const d = shown.find((x) => x.iata === iata);
+    const city = d?.airport?.city ? ` (${d.airport.city})` : "";
+    return truncateLabel(`${iata}${city}`, 20);
+  });
+
+  const yAxisG = gg.append("g").call(yAxis);
+
+  yAxisG.selectAll("text")
+    .attr("fill", "#374151")
+    .attr("font-size", 10);
+
+  yAxisG.selectAll(".tick")
+    .append("title")
+    .text((iata) => {
+      const d = shown.find((x) => x.iata === iata);
+      const city = d?.airport?.city ? ` (${d.airport.city})` : "";
+      const country = d?.airport?.country ? `, ${d.airport.country}` : "";
+      return `${iata}${city}${country}`;
+    });
+
+  yAxisG.selectAll("path,line").attr("stroke", "#e5e7eb");
+
+  // bars（會跟著內容一起捲）
+  const bars = gg.selectAll("rect.bar")
+    .data(shown, (d) => d.iata)
+    .join("rect")
+    .attr("class", "bar")
+    .attr("x", 0)
+    .attr("y", (d) => y(d.iata))
+    .attr("height", y.bandwidth())
+    .attr("width", (d) => x(d.count))
+    .attr("fill", HUB_FILL)
+    .attr("opacity", 0.75)
+    .on("mouseenter", function (event, d) { highlightHub(d.iata); })
+    .on("mouseleave", function () { clearHighlight(); });
+
+  // value labels（空間夠才畫）
+  const showValues = y.bandwidth() >= 12;
+  if (showValues) {
+    gg.selectAll("text.value")
+      .data(shown, (d) => d.iata)
+      .join("text")
+      .attr("class", "value")
+      .attr("x", (d) => x(d.count) + 6)
+      .attr("y", (d) => (y(d.iata) ?? 0) + y.bandwidth() / 2 + 4)
+      .attr("font-size", 10)
+      .attr("fill", "#6b7280")
+      .text((d) => d.count.toLocaleString());
+  }
+
+  viewState.barSel = bars;
+}
+
+
+function rrrrrenderHubsBarChart(svgEl, hubs) {
+  const { w, h } = getChartSize(svgEl, 460, 330);
+
+  // ====== ✅ 1) 依照高度，決定最多能塞幾列 ======
+  // 你右側 chart-slot 很矮時，12 列會擠爆
+  const MIN_ROW_PX = 18;       // 每列最小高度（含空隙）
+  const TITLE_SPACE = 26;      // 上方標題占用
+  const XAXIS_SPACE = 26;      // 下方 x 軸占用
+  const SAFE_PAD = 10;
+
+  // 我們先用一個保守 margin，等算完 left margin 後再更新
+  let margin = { top: 28, right: 18, bottom: 28, left: 160 };
+
+  // 可用的 bar 區高度（扣掉 title / x-axis / margins）
+  const usableH0 = Math.max(60, h - TITLE_SPACE - XAXIS_SPACE - SAFE_PAD);
+  const maxBarsByHeight = Math.max(4, Math.floor(usableH0 / MIN_ROW_PX));
+
+  // 真的要畫的筆數：在 “想畫的 hubs” 與 “高度能容納的數量” 取最小
+  const shown = hubs.slice(0, Math.min(hubs.length, maxBarsByHeight));
+
+  // ====== ✅ 2) 依 label 長度自動算左邊 margin（你原本有做，保留） ======
+  const labels = shown.map((d) => {
+    const city = d?.airport?.city ? ` (${d.airport.city})` : "";
+    return `${d.iata}${city}`;
+  });
+
+  const approxMaxChars = d3.max(labels, (s) => s.length) || 10;
+  const autoLeft = Math.min(220, Math.max(120, Math.round(approxMaxChars * 6.2)));
+
+  margin = { top: 28, right: 18, bottom: 26, left: autoLeft };
+
+  const innerW = Math.max(10, w - margin.left - margin.right);
+  const innerH = Math.max(10, h - margin.top - margin.bottom);
+
+  const svg = d3.select(svgEl)
+    .attr("width", "100%")
+    .attr("height", "100%")
+    .attr("viewBox", `0 0 ${w} ${h}`);
+
+  svg.selectAll("*").remove();
+
+  // ====== ✅ 3) 標題：顯示「目前顯示幾筆」避免使用者誤會 ======
+  const total = hubs.length;
+  const title = total > shown.length
+    ? `Top departing hubs (showing ${shown.length} of ${total})`
+    : "Top departing hubs";
 
   svg.append("text")
     .attr("x", 10)
@@ -239,38 +418,38 @@ function renderHubsBarChart(svgEl, hubs) {
     .attr("font-size", 12)
     .attr("fill", "#374151")
     .attr("font-weight", 600)
-    .text("Top departing hubs");
+    .text(title);
 
   const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
 
+  // ====== ✅ 4) y scale：拉開行距（padding 變大），提升可讀性 ======
   const y = d3.scaleBand()
-    .domain(hubs.map((d) => d.iata))
+    .domain(shown.map((d) => d.iata))
     .range([0, innerH])
-    .padding(0.25);
+    .padding(0.35); // 👈 原本 0.25，拉開列距
 
   const x = d3.scaleLinear()
-    .domain([0, d3.max(hubs, (d) => d.count) || 1])
+    .domain([0, d3.max(shown, (d) => d.count) || 1])
     .nice()
     .range([0, innerW]);
 
-  // y axis with truncation + title tooltip
+  // y axis：字稍微小一點 + truncate + tooltip
   const yAxis = d3.axisLeft(y).tickFormat((iata) => {
-    const d = hubs.find((x) => x.iata === iata);
+    const d = shown.find((x) => x.iata === iata);
     const city = d?.airport?.city ? ` (${d.airport.city})` : "";
-    return truncateLabel(`${iata}${city}`, 22);
+    return truncateLabel(`${iata}${city}`, 20);
   });
 
   const yAxisG = g.append("g").call(yAxis);
 
   yAxisG.selectAll("text")
     .attr("fill", "#374151")
-    .attr("font-size", 11);
+    .attr("font-size", 10); // 👈 比原本 11 再小一點，避免擠
 
-  // ✅ add title on each tick so hover shows full label
   yAxisG.selectAll(".tick")
     .append("title")
     .text((iata) => {
-      const d = hubs.find((x) => x.iata === iata);
+      const d = shown.find((x) => x.iata === iata);
       const city = d?.airport?.city ? ` (${d.airport.city})` : "";
       const country = d?.airport?.country ? `, ${d.airport.country}` : "";
       return `${iata}${city}${country}`;
@@ -281,12 +460,12 @@ function renderHubsBarChart(svgEl, hubs) {
   // x axis
   g.append("g")
     .attr("transform", `translate(0,${innerH})`)
-    .call(d3.axisBottom(x).ticks(4))
-    .call((sel) => sel.selectAll("text").attr("fill", "#6b7280"))
+    .call(d3.axisBottom(x).ticks(3))
+    .call((sel) => sel.selectAll("text").attr("fill", "#6b7280").attr("font-size", 10))
     .call((sel) => sel.selectAll("path,line").attr("stroke", "#e5e7eb"));
 
   const bars = g.selectAll("rect.bar")
-    .data(hubs, (d) => d.iata)
+    .data(shown, (d) => d.iata)
     .join("rect")
     .attr("class", "bar")
     .attr("x", 0)
@@ -295,23 +474,23 @@ function renderHubsBarChart(svgEl, hubs) {
     .attr("width", (d) => x(d.count))
     .attr("fill", HUB_FILL)
     .attr("opacity", 0.75)
-    .on("mouseenter", function (event, d) {
-      highlightHub(d.iata);
-    })
-    .on("mouseleave", function () {
-      clearHighlight();
-    });
+    .on("mouseenter", function (event, d) { highlightHub(d.iata); })
+    .on("mouseleave", function () { clearHighlight(); });
 
-  // value labels
-  g.selectAll("text.value")
-    .data(hubs, (d) => d.iata)
-    .join("text")
-    .attr("class", "value")
-    .attr("x", (d) => x(d.count) + 6)
-    .attr("y", (d) => (y(d.iata) ?? 0) + y.bandwidth() / 2 + 4)
-    .attr("font-size", 11)
-    .attr("fill", "#6b7280")
-    .text((d) => d.count.toLocaleString());
+  // value labels（如果空間太小就不畫，避免擠在一起）
+  const showValues = y.bandwidth() >= 12;
+
+  if (showValues) {
+    g.selectAll("text.value")
+      .data(shown, (d) => d.iata)
+      .join("text")
+      .attr("class", "value")
+      .attr("x", (d) => x(d.count) + 6)
+      .attr("y", (d) => (y(d.iata) ?? 0) + y.bandwidth() / 2 + 4)
+      .attr("font-size", 10)
+      .attr("fill", "#6b7280")
+      .text((d) => d.count.toLocaleString());
+  }
 
   viewState.barSel = bars;
 }
@@ -487,7 +666,7 @@ function drawHubLegend(svg, geoPath, maxCount, rScale) {
   // how tight to the panel edges
   const topPad = 2;     // 👈 closer to upper border
   const rightPad = 6;   // 👈 closer to right border
-
+  svg.selectAll("g.hub-legend").remove();
   // ✅ use the SVG viewport instead of sphere bounds
   const width = +svg.attr("width");
   const x = Math.max(0, width - boxW - rightPad - 20);

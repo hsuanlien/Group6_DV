@@ -115,14 +115,25 @@ async function renderMap(ctx) {
   const store = await initDataStore();
 
   svg.selectAll("*").remove();
+  svg.attr("viewBox", `0 0 ${width} ${height}`);
 
+  // --- projection/path ---
   const projection = d3.geoNaturalEarth1()
-    .scale(125)                                     // 👈 fixed globe size
-    .translate([width / 2 - 14, height / 2 + 45]);  // center in panel
+    .scale(125)
+    .translate([width / 2 - 14, height / 2 + 45]);
   const geoPath = d3.geoPath(projection);
 
+  // =========================
+  // ✅ 1) 建立 zoom root group
+  // =========================
+  const zoomG = svg.append("g").attr("class", "zoom-root");
+
+  // =========================
+  // ✅ 2) basemap 都畫在 zoomG
+  // =========================
+
   // sphere
-  svg.append("path")
+  zoomG.append("path")
     .datum({ type: "Sphere" })
     .attr("d", geoPath)
     .attr("fill", "#f7fbff")
@@ -132,14 +143,14 @@ async function renderMap(ctx) {
   // land + borders
   const { land, borders } = await loadWorldLayers();
 
-  svg.append("path")
+  zoomG.append("path")
     .datum(land)
     .attr("d", geoPath)
     .attr("fill", "#dde5ee")
     .attr("stroke", "none")
     .attr("opacity", 1);
 
-  svg.append("path")
+  zoomG.append("path")
     .datum(borders)
     .attr("d", geoPath)
     .attr("fill", "none")
@@ -149,7 +160,7 @@ async function renderMap(ctx) {
 
   // graticule
   const graticule = d3.geoGraticule().step([30, 30]);
-  svg.append("path")
+  zoomG.append("path")
     .datum(graticule())
     .attr("d", geoPath)
     .attr("fill", "none")
@@ -157,18 +168,24 @@ async function renderMap(ctx) {
     .attr("stroke-width", 0.8)
     .attr("opacity", 0.6);
 
-  // routes (filtered)
+  // =========================
+  // 3) routes (filtered + stratified)
+  // =========================
   const routesAll = getFilteredRoutes(store, store.state.filters);
+  const countsAll = countByDistanceClass(routesAll);
+  console.log("FULL (routesAll) total:", routesAll.length, countsAll);
 
-  // ✅ stratified sample so map matches share/hist distribution
-  const routes = sampleRoutesStratified(routesAll, MAP_ROUTE_LIMIT);
-  viewState.routesForView = routes; // ✅ map & charts use same set
+  const routes = sampleRoutesStratified(routesAll, MAP_ROUTE_LIMIT); // 抽樣後
+  const countsSample = countByDistanceClass(routes);
+  console.log("SAMPLE (routes) total:", routes.length, countsSample);
 
-  drawLegend(svg, geoPath);
+  viewState.routesForView = routes;
 
-  const routesG = svg.append("g").attr("class", "distance-routes");
+  // legend 不要跟著 zoom（所以放在 svg，而不是 zoomG）
+  drawLegend(svg, width, height);
 
-  // ✅ ONLY DRAW ONCE (fix your duplicate drawing bug)
+  const routesG = zoomG.append("g").attr("class", "distance-routes");
+
   const routesSel = routesG.selectAll("path.route")
     .data(routes, (d, i) => `${d.src?.iata || "src"}-${d.dst?.iata || "dst"}-${i}`)
     .join("path")
@@ -178,14 +195,13 @@ async function renderMap(ctx) {
     .attr("stroke-opacity", DEFAULT_ROUTE_OPACITY)
     .attr("stroke-width", 1.6)
     .attr("d", (d) => geoPath(greatCircleLineString(d.src, d.dst, 40)))
+    .style("cursor", "pointer")
     .on("mouseenter", function (event, d) {
-      // fade others
       routesSel
         .attr("stroke", DEFAULT_ROUTE_COLOR)
         .attr("stroke-opacity", FADED_ROUTE_OPACITY)
         .attr("stroke-width", 1.1);
 
-      // highlight this route with class color
       d3.select(this)
         .raise()
         .attr("stroke", COLORS[d.distance_class] || DEFAULT_ROUTE_COLOR)
@@ -193,45 +209,89 @@ async function renderMap(ctx) {
         .attr("stroke-width", 3.2);
 
       showTooltip(svg, event, formatRouteTooltip(d));
-
-      // ✅ highlight histogram bin
       highlightHistogramByDistance(d.distance_km);
     })
     .on("mousemove", function (event) {
       moveTooltip(svg, event);
     })
     .on("mouseleave", function () {
-      // restore routes
       routesSel
         .attr("stroke", DEFAULT_ROUTE_COLOR)
         .attr("stroke-opacity", DEFAULT_ROUTE_OPACITY)
         .attr("stroke-width", 1.6);
 
       hideTooltip(svg);
-
-      // ✅ clear hist highlight
       clearHistogramHighlight();
+    })
+    // ✅ (可選) click 讓使用者「選中」路徑
+    .on("click", function (event, d) {
+      event.stopPropagation();
+      routesSel
+        .attr("stroke", DEFAULT_ROUTE_COLOR)
+        .attr("stroke-opacity", FADED_ROUTE_OPACITY)
+        .attr("stroke-width", 1.1);
+
+      d3.select(this)
+        .raise()
+        .attr("stroke", COLORS[d.distance_class] || DEFAULT_ROUTE_COLOR)
+        .attr("stroke-opacity", 1)
+        .attr("stroke-width", 3.6);
+
+      showTooltip(svg, event, formatRouteTooltip(d));
     });
 
   viewState.routesSel = routesSel;
 
-  // endpoints (optional)
-  const endpoints = routes.slice(0, 60).flatMap((r) => [r.src, r.dst]);
-  const unique = dedupeAirports(endpoints);
+  // =========================
+  //  4) airports 點：改成從「全部 routes」抽端點，並 cap 數量
+  // =========================
+  const endpointsAll = routes.flatMap((r) => [r.src, r.dst]);
+  const uniqueAll = dedupeAirports(endpointsAll);
 
-  svg.append("g")
+  // 太多點會影響效能/可視覺：cap
+  // const MAX_AIRPORT_DOTS = 250;
+  // const airportsToShow = uniqueAll.length > MAX_AIRPORT_DOTS
+  //   ? d3.shuffle(uniqueAll).slice(0, MAX_AIRPORT_DOTS)
+  //   : uniqueAll;
+  const airportsToShow = uniqueAll; // ✅ 顯示所有端點
+
+
+  zoomG.append("g")
     .attr("class", "distance-airports")
     .selectAll("circle.airport")
-    .data(unique, (d) => d.iata || d.name)
+    .data(airportsToShow, (d) => d.iata || d.name)
     .join("circle")
     .attr("class", "airport")
-    .attr("r", 2.5)
+    .attr("r", 1.5)
     .attr("fill", "#111827")
-    .attr("opacity", 0.65)
+    .attr("opacity", 0.3)
+    .style("pointer-events", "none") 
     .attr("transform", (d) => {
       const p = projection([d.lon, d.lat]);
       return p ? `translate(${p[0]},${p[1]})` : "translate(-999,-999)";
     });
+
+  // =========================
+  // 5) zoom 行為 + 按鈕
+  // =========================
+  const zoom = d3.zoom()
+    .scaleExtent([1, 8])
+    .on("zoom", (event) => {
+      zoomG.attr("transform", event.transform);
+    });
+
+  // 讓滑鼠滾輪/拖曳可以 zoom/pan
+  svg.call(zoom);
+
+  // 點空白處：取消選中、回到預設樣式（可選）
+  svg.on("click", () => {
+    routesSel
+      .attr("stroke", DEFAULT_ROUTE_COLOR)
+      .attr("stroke-opacity", DEFAULT_ROUTE_OPACITY)
+      .attr("stroke-width", 1.6);
+    hideTooltip(svg);
+  });
+
 }
 
 // ----------------------
@@ -242,6 +302,12 @@ async function renderSide(ctx) {
   const svg1 = root?.querySelector("#distance-chart-1");
   const svg2 = root?.querySelector("#distance-chart-2");
   if (!svg1 || !svg2) return;
+  const svgEl = root?.querySelector("#curvature-chart-1");
+  if (!svgEl) return;
+  // ✅ 只調 curvature 這張圖的外框高度（不影響其他頁）
+  const slot = svgEl.closest(".chart-slot");
+  if (slot) slot.style.height = "300px"; // 你可試 220/240/260
+
 
   d3.select(svg1).selectAll("*").remove();
   d3.select(svg2).selectAll("*").remove();
@@ -287,7 +353,9 @@ function getChartSize(svgEl, fallbackW = 360, fallbackH = 170) {
 // ----------------------
 function renderHistogram(svgEl, routes) {
   const { w, h } = getChartSize(svgEl, 360, 170);
-  const margin = { top: 26, right: 12, bottom: 30, left: 52 };
+  //const margin = { top: 50, right: 12, bottom: 30, left: 52 };
+  const margin = { top: 52, right: 14, bottom: 58, left: 58 };
+
   const innerW = w - margin.left - margin.right;
   const innerH = h - margin.top - margin.bottom;
 
@@ -344,10 +412,19 @@ function renderHistogram(svgEl, routes) {
     .call((sel) => sel.selectAll("text").attr("fill", "#6b7280"))
     .call((sel) => sel.selectAll("path,line").attr("stroke", "#e5e7eb"));
 
-  g.append("g")
-    .call(d3.axisLeft(y).ticks(4))
-    .call((sel) => sel.selectAll("text").attr("fill", "#6b7280"))
-    .call((sel) => sel.selectAll("path,line").attr("stroke", "#e5e7eb"));
+  // g.append("g")
+  //   .call(d3.axisLeft(y).ticks(4))
+  //   .call((sel) => sel.selectAll("text").attr("fill", "#6b7280"))
+  //   .call((sel) => sel.selectAll("path,line").attr("stroke", "#e5e7eb"));
+  // g.append("g")
+  // .call(d3.axisLeft(y).ticks(4).tickFormat((d) => `${Math.round(d / 1000)}k`).tickPadding(6))
+  // .call((sel) => sel.selectAll("text").attr("fill", "#6b7280"))
+  // .call((sel) => sel.selectAll("path,line").attr("stroke", "#e5e7eb"));
+g.append("g")
+  .call(d3.axisLeft(y).ticks(3).tickFormat((d) => `${Math.round(d / 1000)}k`).tickPadding(6))
+  .call((sel) => sel.selectAll("text").attr("fill", "#6b7280").attr("font-size", 10))
+  .call((sel) => sel.selectAll("path,line").attr("stroke", "#e5e7eb"));
+
 
   // ----------------------------
   // ✅ NEW: Brush interaction
@@ -439,7 +516,7 @@ function renderClassComposition(svgEl, routes) {
     .attr("font-size", 12)
     .attr("fill", "#374151")
     .attr("font-weight", 600)
-    .text("Short / Mid / Long share");
+    .text("Short / Mid / Long percentage");
 
   svg.append("text")
     .attr("x", 10)
@@ -531,20 +608,31 @@ function clearRouteHighlight() {
 // ----------------------
 // Legend
 // ----------------------
-function drawLegend(svg, geoPath) {
-  const boxW = 230;
-  const boxH = 90;
-  const pad = 18;
+function drawLegend(svg, width, height) {
+  // ✅ 統一尺寸，避免切換時左邊緣跳動
+  const boxW = 250;   // 原本 230
+  const boxH = 92;    // 原本 90
+  // ✅ 跟 hubs 一樣的 padding 設定
+   // ✅ 跟 hubs 一樣的 padding 設定
+  const topPad = 2;
+  const rightPad = 6;
 
-  const [[x0, y0], [x1, y1]] = geoPath.bounds({ type: "Sphere" });
-  const x = Math.max(x0 + pad, x1 - boxW - pad);
-  const y = Math.max(y0 + pad, y1 - boxH - pad);
+  // ✅ 先清掉舊 legend，避免每次 render 疊加
+  svg.selectAll("g.distance-legend").remove();
 
-  const legend = svg.append("g")
+  // ✅ 用 SVG viewport 寬度（跟 hubs 一樣）
+  const svgW = +svg.attr("width");      // 你指定要用這種方式
+  // const svgH = +svg.attr("height");  // 目前 y 用 topPad，不一定需要
+
+  // ✅ 跟 hubs 一樣：右上角定位 + 額外往左推 20px
+  const x = Math.max(0, svgW - boxW - rightPad - 20);
+  const y = Math.max(0, topPad);
+
+  const g = svg.append("g")
     .attr("class", "distance-legend")
     .attr("transform", `translate(${x},${y})`);
 
-  legend.append("rect")
+  g.append("rect")
     .attr("width", boxW)
     .attr("height", boxH)
     .attr("rx", 10)
@@ -552,7 +640,7 @@ function drawLegend(svg, geoPath) {
     .attr("opacity", 0.92)
     .attr("stroke", "#e5e7eb");
 
-  legend.append("text")
+  g.append("text")
     .attr("x", 12)
     .attr("y", 20)
     .attr("font-size", 12)
@@ -560,7 +648,7 @@ function drawLegend(svg, geoPath) {
     .attr("font-weight", 600)
     .text("Route distance classes");
 
-  legend.append("text")
+  g.append("text")
     .attr("x", 12)
     .attr("y", 36)
     .attr("font-size", 11)
@@ -574,7 +662,7 @@ function drawLegend(svg, geoPath) {
   ];
 
   for (const it of items) {
-    legend.append("line")
+    g.append("line")
       .attr("x1", 12)
       .attr("x2", 42)
       .attr("y1", it.y)
@@ -582,7 +670,7 @@ function drawLegend(svg, geoPath) {
       .attr("stroke", COLORS[it.key])
       .attr("stroke-width", it.key === "long" ? 3 : it.key === "mid" ? 2.4 : 2);
 
-    legend.append("text")
+    g.append("text")
       .attr("x", 52)
       .attr("y", it.y + 4)
       .attr("font-size", 11)

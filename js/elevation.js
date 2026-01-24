@@ -1,7 +1,7 @@
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
 import * as topojson from "https://cdn.jsdelivr.net/npm/topojson-client@3/+esm";
 
-import { initDataStore } from "./utilities.js";
+import { initDataStore, computeOutDegree } from "./utilities.js";
 
 const WORLD_ATLAS_URL = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 let _worldTopo = null;
@@ -27,6 +27,9 @@ const DOT_OPACITY = 0.75;
 const viewState = {
   thresholds: null, // { q1, q2 } in feet
   pointsSel: null,
+  scatterPointsSel: null,
+  scatterBrushPx: null,     // [[x0,y0],[x1,y1]] in pixel space, or null
+  brushedIatas: null,       // Set(iata) or null
 };
 
 // -------------------------
@@ -46,33 +49,18 @@ async function loadWorldLayers() {
 // -------------------------
 // elevation helpers
 // -------------------------
-function computeElevationThresholds(airports) {
-  // Use quantiles to split into 3 balanced groups.
-  const alts = airports
-    .map((a) => a.altitude)
-    .filter((v) => typeof v === "number" && Number.isFinite(v))
-    .sort((a, b) => a - b);
-
-  if (alts.length < 10) {
-    // fallback if dataset is tiny
-    return { q1: 500, q2: 2000 };
-  }
-
-  const q1 = d3.quantileSorted(alts, 1 / 3);
-  const q2 = d3.quantileSorted(alts, 2 / 3);
-
-  // Guard if quantiles degenerate
-  const safeQ1 = Number.isFinite(q1) ? q1 : 500;
-  const safeQ2 = Number.isFinite(q2) ? q2 : 2000;
-
-  return { q1: safeQ1, q2: safeQ2 };
+function computeElevationThresholds() {
+  // q1: < 5000
+  // q2: 5000 - 8000
+  // q3: > 8000
+  return { q1: 5000, q2: 8000 };
 }
 
 function elevationGroup(altFt, thresholds) {
   if (altFt == null || !Number.isFinite(altFt)) return null;
-  if (altFt <= thresholds.q1) return "low";
-  if (altFt <= thresholds.q2) return "mid";
-  return "high";
+  if (altFt < thresholds.q1) return "low";      // < 5000
+  if (altFt <= thresholds.q2) return "mid";     // 5000–8000
+  return "high";                                // > 8000
 }
 
 function elevationColor(group) {
@@ -91,6 +79,64 @@ function fmtMetersFromFeet(v) {
   if (v == null || !Number.isFinite(v)) return "";
   const m = v * 0.3048;
   return ` (${Math.round(m).toLocaleString()} m)`;
+}
+
+function highlightScatterPoint(iata) {
+  const sel = viewState.scatterPointsSel;
+  if (!sel) return;
+
+  // dim all
+  sel.attr("opacity", 0.18)
+    .attr("r", 2.5)
+    .attr("stroke", "white")
+    .attr("stroke-width", 0.6);
+
+  // highlight matched
+  sel.filter((d) => d.iata === iata)
+    .attr("opacity", 1)
+    .attr("r", 6)
+    .attr("stroke", "#111827")
+    .attr("stroke-width", 1.4)
+    .raise();
+}
+
+function clearScatterHighlight() {
+  updateScatterBrushStyle();
+}
+
+function updateScatterBrushStyle() {
+  const sel = viewState.scatterPointsSel;
+  const brushed = viewState.brushedIatas;
+  if (!sel) return;
+
+  // no brush -> default
+  if (!brushed) {
+    sel.attr("opacity", 0.8)
+      .attr("r", 2.5)
+      .attr("stroke", "white")
+      .attr("stroke-width", 0.6);
+    return;
+  }
+
+  // brush active -> fade others, emphasize selected
+  sel
+    .attr("opacity", (d) => (brushed.has(d.iata) ? 1 : 0.12))
+    .attr("r", (d) => (brushed.has(d.iata) ? 3.4 : 2.3))
+    .attr("stroke", (d) => (brushed.has(d.iata) ? "#111827" : "white"))
+    .attr("stroke-width", (d) => (brushed.has(d.iata) ? 1.1 : 0.6));
+}
+
+function applyScatterBrushToMap() {
+  const pts = viewState.pointsSel;
+  const brushed = viewState.brushedIatas;
+  if (!pts) return;
+
+  if (!brushed) {
+    pts.style("display", null);
+    return;
+  }
+
+  pts.style("display", (d) => (brushed.has(d.iata) ? null : "none"));
 }
 
 // -------------------------
@@ -194,21 +240,28 @@ function formatAirportTooltip(a, group, thresholds) {
   const country = a.country ? `, ${a.country}` : "";
 
   let groupLabel = "Unknown elevation";
-  if (group === "low") groupLabel = `Low (≤ ${fmtFeet(thresholds.q1)})`;
+  if (group === "low") groupLabel = `Low (< ${fmtFeet(thresholds.q1)})`;
   if (group === "mid") groupLabel = `Mid (${fmtFeet(thresholds.q1)} – ${fmtFeet(thresholds.q2)})`;
   if (group === "high") groupLabel = `High (> ${fmtFeet(thresholds.q2)})`;
 
   const alt = fmtFeet(a.altitude) + fmtMetersFromFeet(a.altitude);
 
-  return `${name}${iata}${city}${country}\nAltitude: ${alt}\nGroup: ${groupLabel}`;
+  // departing routes (same as scatter chart)
+  const dep = a.routesDeparting ?? 0;
+
+  return `${name}${iata}${city}${country}
+Altitude: ${alt}
+Departing routes: ${dep.toLocaleString()}
+Group: ${groupLabel}`;
 }
+
 
 // -------------------------
 // legend
 // -------------------------
 function drawElevationLegend(svg, geoPath, thresholds) {
-  const boxW = 165;
-  const boxH = 110;
+  const boxW = 300;
+  const boxH = 113;
 
   const topPad = 0;
   const rightPad = 25;
@@ -242,12 +295,12 @@ function drawElevationLegend(svg, geoPath, thresholds) {
     .attr("y", 38)
     .attr("font-size", 11)
     .attr("fill", "#6b7280")
-    .text("Cutoffs use altitude quantiles");
+    .text("5k/8k ft cutoffs aligned with FAA high-elevation guidance");
 
   const rows = [
     { label: `High (> ${fmtFeet(thresholds.q2)})`, color: HIGH_COLOR },
     { label: `Mid (${fmtFeet(thresholds.q1)} – ${fmtFeet(thresholds.q2)})`, color: MID_COLOR },
-    { label: `Low (≤ ${fmtFeet(thresholds.q1)})`, color: LOW_COLOR },
+    { label: `Low (< ${fmtFeet(thresholds.q1)})`, color: LOW_COLOR },
   ];
 
   const x0Row = 16;
@@ -289,7 +342,7 @@ function parseEquipmentList(eqStr) {
 function buildEquipmentStackData(store, thresholds, topK = 7) {
   const routes = store.routesDerived || [];
 
-  // counts[group][equipment] = count
+  // counts[group][equipment] = raw count
   const counts = {
     low: new Map(),
     mid: new Map(),
@@ -307,8 +360,6 @@ function buildEquipmentStackData(store, thresholds, topK = 7) {
     if (!group) continue;
 
     const eqList = parseEquipmentList(r.equipment);
-
-    // If no equipment, bucket as "Unknown"
     const finalList = eqList.length ? eqList : ["Unknown"];
 
     for (const eq of finalList) {
@@ -325,9 +376,10 @@ function buildEquipmentStackData(store, thresholds, topK = 7) {
 
   const KEYS = [...top, "Other"];
 
-  // build stacked rows: one row per elevation group
   const groups = ["low", "mid", "high"];
-  const rows = groups.map((g) => {
+
+  // Raw count rows
+  const rowsCount = groups.map((g) => {
     const row = { group: g };
     for (const k of KEYS) row[k] = 0;
 
@@ -338,7 +390,15 @@ function buildEquipmentStackData(store, thresholds, topK = 7) {
     return row;
   });
 
-  return { rows, keys: KEYS };
+  // Convert counts -> shares (each group sums to 1)
+  const rowsShare = rowsCount.map((row) => {
+    const total = KEYS.reduce((s, k) => s + (row[k] ?? 0), 0) || 1;
+    const out = { group: row.group };
+    for (const k of KEYS) out[k] = (row[k] ?? 0) / total;
+    return out;
+  });
+
+  return { rowsShare, rowsCount, keys: KEYS };
 }
 
 function groupLabel(g) {
@@ -355,11 +415,14 @@ async function renderMap(ctx) {
   const { mapSvg: svg, width, height } = ctx;
   const store = await initDataStore();
 
+  const depCount = computeDeparturesByAirport(store.routesDerived || []);
+
   svg.selectAll("*").remove();
 
   const projection = d3.geoNaturalEarth1()
-    .scale(125)                    // 👈 fixed globe size
-    .translate([width / 2 - 14, height / 2 + 45]); // center in panel
+    .scale(125)
+    .translate([width / 2 - 14, height / 2 + 45]);
+
   const geoPath = d3.geoPath(projection);
 
   // Sphere
@@ -370,7 +433,7 @@ async function renderMap(ctx) {
     .attr("stroke", "#d1d5db")
     .attr("stroke-width", 1);
 
-  // Land + borders (same)
+  // Land + borders
   const { land, borders } = await loadWorldLayers();
 
   svg.append("path")
@@ -388,7 +451,7 @@ async function renderMap(ctx) {
     .attr("stroke-width", 0.7)
     .attr("opacity", 0.95);
 
-  // Graticule (same)
+  // Graticule
   const graticule = d3.geoGraticule().step([30, 30]);
   svg.append("path")
     .datum(graticule())
@@ -399,42 +462,68 @@ async function renderMap(ctx) {
     .attr("opacity", 0.55);
 
   // For tooltip clamp region
-  const sphereBounds = geoPath.bounds({ type: "Sphere" });
-  svg.property("__sphereBounds__", sphereBounds);
+  svg.property("__sphereBounds__", geoPath.bounds({ type: "Sphere" }));
 
-  // Elevation thresholds (cached per view)
-  if (!viewState.thresholds) {
-    viewState.thresholds = computeElevationThresholds(store.airports || []);
-  }
-  const thresholds = viewState.thresholds;
+  // Recompute thresholds every render
+  const thresholds = computeElevationThresholds();
+  viewState.thresholds = thresholds;
 
   ensureMapTooltip(svg);
 
-  // Draw airport dots
-  const airports = (store.airports || []).filter(
-    (a) => Number.isFinite(a.lat) && Number.isFinite(a.lon)
-  );
+  //  Deduplicate airports by IATA and pick the "best" record
+  const bestByIATA = new Map();
+
+  for (const a of store.airports || []) {
+    if (!a.iata) continue;
+    if (!Number.isFinite(a.lat) || !Number.isFinite(a.lon)) continue;
+
+    const prev = bestByIATA.get(a.iata);
+
+    // scoring: prefer rows with valid altitude
+    const score = (x) => {
+      let s = 0;
+      if (Number.isFinite(x.lat) && Number.isFinite(x.lon)) s += 10;
+      if (Number.isFinite(x.altitude)) s += 5;
+      if (x.name) s += 1;
+      return s;
+    };
+
+    if (!prev || score(a) > score(prev)) {
+      bestByIATA.set(a.iata, a);
+    }
+  }
+
+  const airportsUnique = Array.from(bestByIATA.values());
+
+  // Precompute group
+  const airportData = airportsUnique.map((a) => ({
+    ...a,
+    group: elevationGroup(a.altitude, thresholds),
+    routesDeparting: depCount.get(a.iata) ?? 0,    
+  }));
 
   const dotsG = svg.append("g").attr("class", "elev-airports");
 
   const points = dotsG
     .selectAll("circle.airport")
-    .data(airports, (d) => d.iata || `${d.name}-${d.lat}-${d.lon}`)
+    .data(airportData, (d) => d.iata)
     .join("circle")
     .attr("class", "airport")
     .attr("r", DOT_R)
-    .attr("fill", (a) => elevationColor(elevationGroup(a.altitude, thresholds)))
+    .attr("fill", (d) => elevationColor(d.group))
     .attr("opacity", DOT_OPACITY)
     .attr("stroke", DOT_STROKE)
     .attr("stroke-width", DOT_STROKE_W)
-    .attr("transform", (a) => {
-      const p = projection([a.lon, a.lat]);
+    .attr("transform", (d) => {
+      const p = projection([d.lon, d.lat]);
       return p ? `translate(${p[0]},${p[1]})` : "translate(-999,-999)";
     })
-    .on("mouseenter", function (event, a) {
-      const group = elevationGroup(a.altitude, thresholds);
+    .on("mouseenter", function (event, d) {
       d3.select(this).attr("opacity", 1).raise();
-      showMapTooltip(svg, event, formatAirportTooltip(a, group, thresholds));
+      showMapTooltip(svg, event, formatAirportTooltip(d, d.group, thresholds));
+
+      // LINK: highlight scatter dot
+      highlightScatterPoint(d.iata);
     })
     .on("mousemove", function (event) {
       moveMapTooltip(svg, event);
@@ -442,13 +531,16 @@ async function renderMap(ctx) {
     .on("mouseleave", function () {
       d3.select(this).attr("opacity", DOT_OPACITY);
       hideMapTooltip(svg);
+
+      // LINK: reset scatter
+      clearScatterHighlight();
     });
 
   viewState.pointsSel = points;
 
-  // Legend
   drawElevationLegend(svg, geoPath, thresholds);
 }
+
 
 function getChartSize(svgEl, fallbackW = 420, fallbackH = 260) {
   const parent = svgEl.parentElement;
@@ -458,62 +550,65 @@ function getChartSize(svgEl, fallbackW = 420, fallbackH = 260) {
   return { w, h };
 }
 
-function computeRouteCountsByAirport(routesDerived) {
+function computeDeparturesByAirport(routesDerived) {
   const m = new Map();
 
-  for (const r of routesDerived) {
+  for (const r of routesDerived || []) {
     const s = r?.src?.iata;
-    const d = r?.dst?.iata;
-
-    // count both endpoints (connectivity).
-    // If you want departures only: keep only the src block.
     if (s) m.set(s, (m.get(s) ?? 0) + 1);
-    if (d) m.set(d, (m.get(d) ?? 0) + 1);
   }
 
   return m;
 }
 
-function buildEquipmentDistributionForGroup(store, thresholds, targetGroup = "high", topK = 6) {
+// -------------------------
+// unique aircraft types per elevation group
+// -------------------------
+function buildUniqueEquipmentByGroup(store, thresholds) {
   const routes = store.routesDerived || [];
-  const counts = new Map();
+
+  const groups = ["low", "mid", "high"];
+  const sets = {
+    low: new Set(),
+    mid: new Set(),
+    high: new Set(),
+  };
+
+  // Also keep route counts per group (useful for tooltip)
+  const routeCounts = { low: 0, mid: 0, high: 0 };
 
   for (const r of routes) {
     const alt = r?.src?.altitude;
     if (!Number.isFinite(alt)) continue;
 
     const g = elevationGroup(alt, thresholds);
-    if (g !== targetGroup) continue;
+    if (!g) continue;
+
+    routeCounts[g]++;
 
     const eqList = parseEquipmentList(r.equipment);
     const finalList = eqList.length ? eqList : ["Unknown"];
 
     for (const eq of finalList) {
-      counts.set(eq, (counts.get(eq) ?? 0) + 1);
+      sets[g].add(eq);
     }
   }
 
-  const sorted = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
-  const top = sorted.slice(0, topK);
-  const rest = sorted.slice(topK);
-
-  const other = rest.reduce((acc, [, v]) => acc + v, 0);
-  const items = top.map(([k, v]) => ({ key: k, value: v }));
-
-  if (other > 0) items.push({ key: "Other", value: other });
-
-  const total = items.reduce((s, d) => s + d.value, 0);
-  return { items, total };
+  return groups.map((g) => ({
+    group: g,
+    unique: sets[g].size,
+    routes: routeCounts[g],
+  }));
 }
 
 function renderElevationScatter(svgEl, store, thresholds) {
   const { w, h } = getChartSize(svgEl, 460, 320);
 
   const margin = {
-    top: 24,
-    right: 12,
-    bottom: Math.max(34, Math.round(h * 0.18)), // scale with height
-    left: Math.max(46, Math.round(w * 0.12)),   // scale with width
+    top: 30,
+    right: 10,
+    bottom: Math.max(30, Math.round(h * 0.15)), // scale with height
+    left: Math.max(46, Math.round(w * 0.13)),   // scale with width
   };
   const innerW = w - margin.left - margin.right;
   const innerH = h - margin.top - margin.bottom;
@@ -534,8 +629,17 @@ function renderElevationScatter(svgEl, store, thresholds) {
     .attr("font-weight", 600)
     .text("Flight Routes vs. Airport Altitude");
 
+  const rangeText = svg.append("text")
+    .attr("class", "brush-range-text")
+    .attr("x", w - 10)
+    .attr("y", 18)
+    .attr("text-anchor", "end")
+    .attr("font-size", 11)
+    .attr("fill", "#6b7280")
+    .text(viewState.scatterBrushPx ? "Brushed selection" : "Drag to filter");
+
   // Build data: join airport altitude + route count
-  const routeCount = computeRouteCountsByAirport(store.routesDerived || []);
+  const routeCount = computeDeparturesByAirport(store.routesDerived || []);
 
   const data = (store.airports || [])
     .map((a) => {
@@ -594,7 +698,7 @@ function renderElevationScatter(svgEl, store, thresholds) {
   // Axis labels
   svg.append("text")
     .attr("x", margin.left + innerW / 2)
-    .attr("y", h - 10)
+    .attr("y", h - 3)
     .attr("text-anchor", "middle")
     .attr("font-size", 11)
     .attr("fill", "#6b7280")
@@ -620,7 +724,7 @@ function renderElevationScatter(svgEl, store, thresholds) {
     .style("color", "white")
     .style("padding", "8px 10px")
     .style("border-radius", "10px")
-    .style("font-size", "12px")
+    .style("font-size", "10px")
     .style("opacity", "0.92");
 
   // Ensure the parent is positioned (so absolute tooltip works)
@@ -648,10 +752,11 @@ function renderElevationScatter(svgEl, store, thresholds) {
   }
 
   // Points
-  g.append("g")
-    .selectAll("circle")
-    .data(data)
+  const scatterPoints = g.append("g")
+    .selectAll("circle.scatter-point")
+    .data(data, (d) => d.iata)
     .join("circle")
+    .attr("class", "scatter-point")
     .attr("cx", (d) => x(d.altitude))
     .attr("cy", (d) => y(d.routes))
     .attr("r", 2.5)
@@ -660,26 +765,85 @@ function renderElevationScatter(svgEl, store, thresholds) {
     .attr("stroke", "white")
     .attr("stroke-width", 0.6)
     .on("mouseenter", function (event, d) {
-      d3.select(this).attr("opacity", 1).attr("r", 4.2).raise();
+      d3.select(this).attr("opacity", 1).attr("r", 4).raise();
       showTip(event, d);
     })
     .on("mousemove", function (event) {
       moveTip(event);
     })
     .on("mouseleave", function () {
-      d3.select(this).attr("opacity", 0.7).attr("r", 3.2);
+      // d3.select(this).attr("opacity", 0.8).attr("r", 2.5);
       hideTip();
+      // restore brush style (or default if no brush)
+      updateScatterBrushStyle();
+
     });
+
+    // ----------------------------
+// Brush (2D) like distance.js
+// ----------------------------
+const brush = d3.brush()
+  .extent([[0, 0], [innerW, innerH]])
+  .on("brush end", (event) => {
+    if (!event.selection) {
+      // cleared
+      viewState.scatterBrushPx = null;
+      viewState.brushedIatas = null;
+      rangeText.text("Drag to filter");
+
+      updateScatterBrushStyle();
+      applyScatterBrushToMap();
+      return;
+    }
+
+    const [[x0, y0], [x1, y1]] = event.selection;
+    viewState.scatterBrushPx = [[x0, y0], [x1, y1]];
+
+    const minX = Math.min(x0, x1), maxX = Math.max(x0, x1);
+    const minY = Math.min(y0, y1), maxY = Math.max(y0, y1);
+
+    // compute brushed airport set
+    const brushed = new Set();
+    for (const d of data) {
+      const px = x(d.altitude);
+      const py = y(d.routes);
+      if (px >= minX && px <= maxX && py >= minY && py <= maxY) {
+        brushed.add(d.iata);
+      }
+    }
+
+    viewState.brushedIatas = brushed;
+    rangeText.text(`Selected: ${brushed.size.toLocaleString()}`);
+
+    updateScatterBrushStyle();
+    applyScatterBrushToMap();
+  });
+
+g.append("g")
+  .attr("class", "brush")
+  .call(brush);
+
+// restore previous brush position on rerender
+if (viewState.scatterBrushPx) {
+  g.select("g.brush").call(brush.move, viewState.scatterBrushPx);
+}
+
+  // store selection for linking + brushing
+  viewState.scatterPointsSel = scatterPoints;
+
+  // if a brush is already active, apply its style immediately
+  updateScatterBrushStyle();
 }
 
 function renderEquipmentStackedBar(svgEl, store, thresholds) {
   const { w, h } = getChartSize(svgEl, 460, 180);
 
+  //  more top margin so bars start lower (avoid title overlap)
   const margin = {
-    top: 26,
-    right: 12,
-    bottom: 34,
-    left: 44,
+    top: 28,
+    right: 120,
+    bottom: 18,
+    left: 60,
   };
 
   const innerW = Math.max(10, w - margin.left - margin.right);
@@ -692,24 +856,23 @@ function renderEquipmentStackedBar(svgEl, store, thresholds) {
 
   svg.selectAll("*").remove();
 
-  // Title
+  //  Title stays at top
   svg.append("text")
     .attr("x", 10)
     .attr("y", 18)
     .attr("font-size", 12)
     .attr("fill", "#374151")
     .attr("font-weight", 600)
-    .text("Aircraft types by altitude group");
+    .text("Aircraft share by altitude group (100%)");
 
-  const { rows, keys } = buildEquipmentStackData(store, thresholds, 7);
-  if (!rows.length) return;
+  const { rowsShare, rowsCount, keys } = buildEquipmentStackData(store, thresholds, 7);
+  if (!rowsShare.length) return;
 
-  const groups = rows.map((d) => d.group);
+  const groups = rowsShare.map((d) => d.group);
 
+  // Stack SHARE rows
   const stack = d3.stack().keys(keys);
-  const series = stack(rows);
-
-  const maxY = d3.max(series, (s) => d3.max(s, (d) => d[1])) || 1;
+  const series = stack(rowsShare);
 
   const x = d3.scaleBand()
     .domain(groups)
@@ -717,11 +880,12 @@ function renderEquipmentStackedBar(svgEl, store, thresholds) {
     .padding(0.35);
 
   const y = d3.scaleLinear()
-    .domain([0, maxY])
-    .nice()
+    .domain([0, 1])
     .range([innerH, 0]);
 
-  const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+  // plotting group starts lower due to margin.top
+  const g = svg.append("g")
+    .attr("transform", `translate(${margin.left},${margin.top})`);
 
   // Axes
   g.append("g")
@@ -731,19 +895,19 @@ function renderEquipmentStackedBar(svgEl, store, thresholds) {
     .call((sel) => sel.selectAll("path,line").attr("stroke", "#e5e7eb"));
 
   g.append("g")
-    .call(d3.axisLeft(y).ticks(4))
+    .call(d3.axisLeft(y).ticks(4).tickFormat(d3.format(".0%")))
     .call((sel) => sel.selectAll("text").attr("fill", "#6b7280").attr("font-size", 11))
     .call((sel) => sel.selectAll("path,line").attr("stroke", "#e5e7eb"));
 
   // Y label
   svg.append("text")
-    .attr("transform", `translate(14, ${margin.top + innerH / 2}) rotate(-90)`)
+    .attr("transform", `translate(16, ${margin.top + innerH / 2}) rotate(-90)`)
     .attr("text-anchor", "middle")
     .attr("font-size", 11)
     .attr("fill", "#6b7280")
-    .text("Number of routes");
+    .text("Share of routes");
 
-  // Tooltip (simple)
+  // Tooltip (HTML)
   const tip = d3.select(svgEl.parentElement)
     .selectAll("div._equipTip")
     .data([null])
@@ -773,30 +937,43 @@ function renderEquipmentStackedBar(svgEl, store, thresholds) {
     tip.style("display", "none");
   }
 
+  // Helper for raw counts lookup
+  const countByGroup = new Map(rowsCount.map((r) => [r.group, r]));
+
   // Draw stacks
   const layers = g.append("g")
     .selectAll("g.layer")
     .data(series)
     .join("g")
     .attr("class", "layer")
-    .attr("fill", (d) => {
-      // Use your elevation colors for groups? No—these are equipment categories.
-      // Keep default palette from D3 (no manual colors) to differentiate equipment.
-      return d3.schemeTableau10[keys.indexOf(d.key) % 10];
-    });
+    .attr("fill", (d) => d3.schemeTableau10[keys.indexOf(d.key) % 10]);
 
   layers.selectAll("rect")
-    .data((d) => d.map((v) => ({ key: d.key, v })))
+    .data((s) =>
+      s.map((v) => ({
+        key: s.key,
+        v,
+        group: v.data.group,
+      }))
+    )
     .join("rect")
-    .attr("x", (d) => x(d.v.data.group))
-    .attr("width", x.bandwidth())
+    .attr("x", (d) => x(d.group))
     .attr("y", (d) => y(d.v[1]))
     .attr("height", (d) => Math.max(0, y(d.v[0]) - y(d.v[1])))
-    .attr("opacity", 0.85)
+    .attr("width", x.bandwidth())
+    .attr("opacity", 0.88)
     .on("mouseenter", function (event, d) {
-      const gKey = groupLabel(d.v.data.group);
-      const val = d.v.data[d.key] ?? 0;
-      showTip(event, `<b>${gKey}</b><br/>${d.key}: ${val.toLocaleString()}`);
+      const share = (d.v[1] - d.v[0]) || 0;
+      const rawRow = countByGroup.get(d.group);
+      const rawCount = rawRow ? (rawRow[d.key] ?? 0) : 0;
+
+      showTip(
+        event,
+        `${d.key}<br/>
+         Share: <b>${(share * 100).toFixed(1)}%</b><br/>
+         Routes: ${rawCount.toLocaleString()}`
+      );
+
       d3.select(this).attr("opacity", 1);
     })
     .on("mousemove", function (event) {
@@ -804,37 +981,61 @@ function renderEquipmentStackedBar(svgEl, store, thresholds) {
     })
     .on("mouseleave", function () {
       hideTip();
-      d3.select(this).attr("opacity", 0.85);
+      d3.select(this).attr("opacity", 0.88);
     });
 
-  // Small legend (compact, top-left inside chart)
-  const leg = svg.append("g").attr("transform", `translate(${margin.left},${margin.top - 6})`);
-  const legendKeys = keys.slice(0, Math.min(keys.length, 5)); // keep compact
-  leg.selectAll("g")
+  // Vertical legend on the RIGHT
+  const legendX = margin.left + innerW + 12;
+  const legendY = margin.top;
+
+  const leg = svg.append("g")
+    .attr("transform", `translate(${legendX},${legendY})`);
+
+  const rowH = 16;
+  const legendKeys = keys;
+
+  leg.append("text")
+    .attr("x", 8)
+    .attr("y", -16)
+    .attr("font-size", 10.5)
+    .attr("fill", "#6b7280")
+    .attr("font-weight", 600)
+    .text("Aircraft");
+
+  const item = leg.selectAll("g.item")
     .data(legendKeys)
     .join("g")
-    .attr("transform", (d, i) => `translate(${i * 78},0)`)
-    .each(function (k) {
-      const gg = d3.select(this);
-      gg.append("rect")
-        .attr("x", 0)
-        .attr("y", -10)
-        .attr("width", 10)
-        .attr("height", 10)
-        .attr("fill", d3.schemeTableau10[keys.indexOf(k) % 10])
-        .attr("opacity", 0.85);
+    .attr("class", "item")
+    .attr("transform", (d, i) => `translate(10, ${i * rowH})`);
 
-      gg.append("text")
-        .attr("x", 14)
-        .attr("y", -1)
-        .attr("font-size", 10.5)
-        .attr("fill", "#6b7280")
-        .text(k.length > 8 ? k.slice(0, 7) + "…" : k);
-    });
+  item.append("rect")
+    .attr("x", 0)
+    .attr("y", -10)
+    .attr("width", 10)
+    .attr("height", 10)
+    .attr("fill", (k) => d3.schemeTableau10[keys.indexOf(k) % 10])
+    .attr("opacity", 0.85);
+
+  item.append("text")
+    .attr("x", 14)
+    .attr("y", -1)
+    .attr("font-size", 10.5)
+    .attr("fill", "#6b7280")
+    .text((k) => (k.length > 12 ? k.slice(0, 11) + "…" : k));
 }
 
-function renderEquipmentPie(svgEl, store, thresholds) {
-  const { w, h } = getChartSize(svgEl, 460, 180);
+function renderEquipmentDiversityBar(svgEl, store, thresholds) {
+  const { w, h } = getChartSize(svgEl, 460, 170);
+
+  const margin = {
+    top: 30,
+    right: 18,
+    bottom: 30,
+    left: 70,   //  more space for y labels
+  };
+
+  const innerW = Math.max(10, w - margin.left - margin.right);
+  const innerH = Math.max(10, h - margin.top - margin.bottom);
 
   const svg = d3.select(svgEl)
     .attr("width", "100%")
@@ -850,45 +1051,64 @@ function renderEquipmentPie(svgEl, store, thresholds) {
     .attr("font-size", 12)
     .attr("fill", "#374151")
     .attr("font-weight", 600)
-    .text("Aircraft types (high-altitude airports)");
+    .text("Unique aircraft types per elevation group");
 
-  const { items, total } = buildEquipmentDistributionForGroup(store, thresholds, "high", 6);
+  const data = buildUniqueEquipmentByGroup(store, thresholds);
 
-  if (!items.length || total === 0) {
+  if (!data.length) {
     svg.append("text")
       .attr("x", 14)
       .attr("y", 46)
       .attr("font-size", 12)
       .attr("fill", "#6b7280")
-      .text("No route equipment data for high-altitude airports.");
+      .text("No equipment data available.");
     return;
   }
 
-  // Layout: donut on left, legend on right
-  const pad = 10;
-  const legendW = Math.min(170, Math.floor(w * 0.42));
-  const chartW = w - legendW - pad;
+  //  Horizontal layout:
+  // y = groups, x = unique count
+  const ORDER = ["high", "mid", "low"];
 
-  const cx = Math.max(60, Math.floor(chartW * 0.50));
-  const cy = Math.max(70, Math.floor(h * 0.56));
+  const y = d3.scaleBand()
+    .domain(ORDER.filter(g => data.some(d => d.group === g)))
+    .range([0, innerH])
+    .padding(0.35);
 
-  const r = Math.max(34, Math.min(Math.floor(h * 0.34), Math.floor(chartW * 0.34)));
-  const innerR = Math.max(18, Math.floor(r * 0.58));
+  const x = d3.scaleLinear()
+    .domain([0, d3.max(data, (d) => d.unique) || 1])
+    .nice()
+    .range([0, innerW]);
 
-  const color = d3.scaleOrdinal()
-    .domain(items.map((d) => d.key))
-    .range(d3.schemeTableau10);
+  const g = svg.append("g")
+    .attr("transform", `translate(${margin.left},${margin.top})`);
 
-  const pie = d3.pie().sort(null).value((d) => d.value);
-  const arc = d3.arc().outerRadius(r).innerRadius(innerR);
-  const arcHover = d3.arc().outerRadius(r + 4).innerRadius(innerR);
+  // Axes
+  g.append("g")
+    .call(d3.axisLeft(y).tickFormat(groupLabel))
+    .call((sel) => sel.selectAll("text").attr("fill", "#6b7280").attr("font-size", 11))
+    .call((sel) => sel.selectAll("path,line").attr("stroke", "#e5e7eb"));
+
+  g.append("g")
+    .attr("transform", `translate(0,${innerH})`)
+    .call(d3.axisBottom(x).ticks(4))
+    .call((sel) => sel.selectAll("text").attr("fill", "#6b7280").attr("font-size", 11))
+    .call((sel) => sel.selectAll("path,line").attr("stroke", "#e5e7eb"));
+
+  // X label
+  svg.append("text")
+    .attr("x", margin.left + innerW / 2)
+    .attr("y", h - 3)
+    .attr("text-anchor", "middle")
+    .attr("font-size", 11)
+    .attr("fill", "#6b7280")
+    .text("Number of aircraft types");
 
   // Tooltip (HTML)
   const tip = d3.select(svgEl.parentElement)
-    .selectAll("div._pieTip")
+    .selectAll("div._diversityTip")
     .data([null])
     .join("div")
-    .attr("class", "_pieTip")
+    .attr("class", "_diversityTip")
     .style("position", "absolute")
     .style("pointer-events", "none")
     .style("display", "none")
@@ -902,95 +1122,57 @@ function renderEquipmentPie(svgEl, store, thresholds) {
   d3.select(svgEl.parentElement).style("position", "relative");
 
   function showTip(event, d) {
-    const pct = total ? Math.round((d.data.value / total) * 1000) / 10 : 0;
     tip.style("display", "block").html(
-      `<b>${d.data.key}</b><br/>Routes: ${d.data.value.toLocaleString()}<br/>Share: ${pct}%`
+      `Group: <b>${groupLabel(d.group)}</b><br/>
+       Unique types: <b>${d.unique}</b><br/>
+       Routes: ${d.routes.toLocaleString()}`
     );
     moveTip(event);
   }
+
   function moveTip(event) {
     const [mx, my] = d3.pointer(event, svgEl.parentElement);
     tip.style("left", `${mx + 10}px`).style("top", `${my + 10}px`);
   }
+
   function hideTip() {
     tip.style("display", "none");
   }
 
-  // Donut group
-  const g = svg.append("g").attr("transform", `translate(${cx},${cy})`);
-
-  g.selectAll("path.slice")
-    .data(pie(items))
-    .join("path")
-    .attr("class", "slice")
-    .attr("d", arc)
-    .attr("fill", (d) => color(d.data.key))
-    .attr("opacity", 0.9)
-    .attr("stroke", "white")
-    .attr("stroke-width", 1)
+  // Bars
+  g.selectAll("rect.bar")
+    .data(data)
+    .join("rect")
+    .attr("class", "bar")
+    .attr("x", 0)
+    .attr("y", (d) => y(d.group))
+    .attr("width", (d) => x(d.unique))
+    .attr("height", y.bandwidth())
+    .attr("rx", 4)
+    .attr("fill", (d) => elevationColor(d.group))
+    .attr("opacity", 0.85)
     .on("mouseenter", function (event, d) {
-      d3.select(this).attr("d", arcHover).attr("opacity", 1);
+      d3.select(this).attr("opacity", 1);
       showTip(event, d);
     })
     .on("mousemove", function (event) {
       moveTip(event);
     })
     .on("mouseleave", function () {
-      d3.select(this).attr("d", arc).attr("opacity", 0.9);
+      d3.select(this).attr("opacity", 0.85);
       hideTip();
     });
 
-  // Center label (total)
-  g.append("text")
-    .attr("text-anchor", "middle")
-    .attr("y", -2)
-    .attr("font-size", 12)
-    .attr("fill", "#374151")
-    .attr("font-weight", 700)
-    .text(total.toLocaleString());
-
-  g.append("text")
-    .attr("text-anchor", "middle")
-    .attr("y", 14)
+  // Value labels on the right side of bars
+  g.selectAll("text.val")
+    .data(data)
+    .join("text")
+    .attr("class", "val")
+    .attr("x", (d) => x(d.unique) + 6)
+    .attr("y", (d) => y(d.group) + y.bandwidth() / 2 + 4)
     .attr("font-size", 10.5)
     .attr("fill", "#6b7280")
-    .text("routes");
-
-  // Legend (right side)
-  const legX = chartW + 6;
-  const legY = 34;
-
-  const leg = svg.append("g").attr("transform", `translate(${legX},${legY})`);
-
-  const rowH = 16;
-  const maxRows = Math.floor((h - legY - 10) / rowH);
-  const legendItems = items.slice(0, Math.max(1, maxRows));
-
-  leg.selectAll("g.row")
-    .data(legendItems)
-    .join("g")
-    .attr("class", "row")
-    .attr("transform", (d, i) => `translate(0,${i * rowH})`)
-    .each(function (d) {
-      const row = d3.select(this);
-
-      row.append("rect")
-        .attr("x", 0)
-        .attr("y", -10)
-        .attr("width", 10)
-        .attr("height", 10)
-        .attr("fill", color(d.key))
-        .attr("opacity", 0.9);
-
-      const pct = total ? Math.round((d.value / total) * 1000) / 10 : 0;
-
-      row.append("text")
-        .attr("x", 14)
-        .attr("y", -1)
-        .attr("font-size", 10.5)
-        .attr("fill", "#6b7280")
-        .text(`${d.key.length > 10 ? d.key.slice(0, 9) + "…" : d.key} (${pct}%)`);
-    });
+    .text((d) => d.unique);
 }
 
 async function renderSide(ctx) {
@@ -1003,12 +1185,12 @@ async function renderSide(ctx) {
   const store = await initDataStore();
 
   if (!viewState.thresholds) {
-    viewState.thresholds = computeElevationThresholds(store.airports || []);
+    viewState.thresholds = computeElevationThresholds();
   }
 
   renderElevationScatter(svgEl, store, viewState.thresholds);
   renderEquipmentStackedBar(svgE2, store, viewState.thresholds);
-  renderEquipmentPie(svgE3, store, viewState.thresholds);
+  renderEquipmentDiversityBar(svgE3, store, viewState.thresholds);
 }
 
 export const elevation = { renderMap, renderSide };

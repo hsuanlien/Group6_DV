@@ -453,7 +453,7 @@ function updateRoutingMap(ctx, store) {
         .attr("fill", "none")
         .attr("stroke", "#111")
         .attr("stroke-opacity", 0.9)
-        .attr("stroke-width", 3)
+        .attr("stroke-width", 0.9)
         .attr("d", (d) => {
             const [x1, y1] = projection([d.src.lon, d.src.lat]);
             const [x2, y2] = projection([d.dst.lon, d.dst.lat]);
@@ -536,7 +536,7 @@ function updateRoutingMap(ctx, store) {
         .attr("fill", "none")
         .attr("stroke", "#111")
         .attr("stroke-opacity", 0.55)
-        .attr("stroke-width", 0.7)
+        .attr("stroke-width", 0.25)
         .attr("d", (d) => {
             const [x1, y1] = projection([d.src.lon, d.src.lat]);
             const [x2, y2] = projection([d.dst.lon, d.dst.lat]);

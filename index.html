@@ -4,7 +4,7 @@
 <head>
     <meta name="description" content="Course project for 25WS Data Visualization" />
     <meta charset="utf-8" />
-    <title>Group 6 - Flight Pattern Analysis</title>
+    <title>Visual Analytics of Flight Routes and Airport Networks</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="author" content="Group 6 - Hsuan Lien & Kai-Hui You" />
 
@@ -70,8 +70,8 @@
                             <option value="" selected disabled>Select an airport…</option>
                         </select>
                         <p class="hint">
-                            Double-click a route to select it and extend your journey, or double-click an existing route or airport to cancel and revise your plan.
-                            When your final airport equals the first airport, the route is complete.
+                            <b>Double-click</b> a route to select it and extend your journey, or <br><b>double-click</b> an existing route or chosen airport to revise your plan.
+                            <br>When your final airport equals the first airport, the route is complete.
                         </p>
 
                         <h4 class="stack-title">Selected airports</h4>
@@ -86,25 +86,21 @@
                     </section>
 
                     <section class="view-block" data-view-block="elevation">
-                        <h3 class="block-title">Elevation charts</h3>
-                        <div class="chart-slot"><svg id="elevation-chart-1"></svg></div>
-                        <div class="chart-slot"><svg id="elevation-chart-2"></svg></div>
+                        <div class="chart-slot-elevation"><svg id="elevation-chart-1"></svg></div>
+                        <div class="chart-slot-elevation"><svg id="elevation-chart-2"></svg></div>
                         <div class="chart-slot"><svg id="elevation-chart-3"></svg></div>
                     </section>
 
                     <section class="view-block" data-view-block="hubs">
-                        <h3 class="block-title">Hubs charts</h3>
                         <div class="chart-slot"><svg id="hubs-chart-1"></svg></div>
                     </section>
 
                     <section class="view-block" data-view-block="distance">
-                        <h3 class="block-title">Distance charts</h3>
                         <div class="chart-slot"><svg id="distance-chart-1"></svg></div>
                         <div class="chart-slot"><svg id="distance-chart-2"></svg></div>
                     </section>
 
                     <section class="view-block" data-view-block="curvature">
-                        <h3 class="block-title">Curvature charts</h3>
                         <div class="chart-slot"><svg id="curvature-chart-1"></svg></div>
                     </section>
                 </div>
@@ -120,10 +116,10 @@
                     <p><b>Elevation notes</b></p>
                     <ul>
                         <li>High-elevation airports are geographically concentrated rather than globally distributed.</li>
-                        <li>Airport connectivity is not proportional to elevation.</li>
-                        <li>Aircraft usage becomes less diverse at higher elevations.</li>
-                        <li>Only a few aircraft types dominate operations at high-elevation airports.</li>
-                        <li>Elevation influences aircraft choice more than route volume.</li>
+                        <li>Route volume shows no clear monotonic relationship with airport elevation.</li>
+                        <li>Aircraft usage is less diverse at high-elevation airports.</li>
+                        <li>High-elevation airports show a more concentrated aircraft mix, with a few types taking large shares.</li>
+                        <li>Aircraft type distribution changes across elevation groups, while route volume varies widely at many elevations.</li>
                     </ul>
                 </div>
             </div>

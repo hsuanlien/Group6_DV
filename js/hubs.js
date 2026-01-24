@@ -4,7 +4,7 @@ import * as topojson from "https://cdn.jsdelivr.net/npm/topojson-client@3/+esm";
 import {
   initDataStore,
   computeOutDegree,
-  capRoutes, // ✅ utilities.js 有的話就用（沒有也沒關係，我下面有 fallback）
+  capRoutes, 
 } from "./utilities.js";
 
 /**
@@ -225,13 +225,13 @@ function renderHubsBarChart(svgEl, hubs) {
   const { w, h } = getChartSize(svgEl, 460, 330);
 
   // ====== layout ======
-  const rowH = 22;              // 每列高度（含行距感）
-  const paddingBand = 0.35;     // 你覺得舒服的行距
-  const headerH = 26;           // 標題列
-  const xAxisH = 26;            // x 軸
+  const rowH = 22;              
+  const paddingBand = 0.35;     
+  const headerH = 26;           
+  const xAxisH = 26;            // x 
   const marginRight = 18;
 
-  // 左邊 margin：依 label 長度估計（保留你的方法）
+  // left margin：依 label 長度估計
   const labels = shown.map((d) => {
     const city = d?.airport?.city ? ` (${d.airport.city})` : "";
     return `${d.iata}${city}`;

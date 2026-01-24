@@ -17,9 +17,9 @@ const VIEWS = {
 const VIEW_META = {
   routing: { title: "Build and visualize your European flight journey in seconds!", subtitle: "Choose a starting airport, explore reachable destinations, and automatically visualize the entire journey on the map." },
   elevation: { title: "Elevation Insights for Air Networks", subtitle: "Explore whether higher-altitude airports show different connectivity patterns and aircraft mix compared to lower-elevation airports." },
-  hubs: { title: "Hubs", subtitle: "Identify major hubs and how connectivity concentrates." },
-  distance: { title: "Distance", subtitle: "Global patterns of short-, mid-, and long-haul routes." },
-  curvature: { title: "Curvature", subtitle: "Show great-circle curvature tendencies across routes." },
+  hubs: { title: "Discover the world’s busiest airports at a glance.", subtitle: "Identify major global and regional hubs and explore how flight connectivity concentrates across the air transportation network." },
+  distance: { title: "Reveal global patterns of flight distance.", subtitle: "Explore how short-, mid-, and long-haul routes are distributed across the world and how they shape the global airline network." },
+  curvature: { title: "Explore the geometry of global flight routes.", subtitle: "Analyze great-circle route curvature and discover equatorial-like, mid-latitude, and polar-like routing patterns." },
 };
 
 // ----- DOM -----

@@ -175,11 +175,9 @@ function drawCurvatureLegend(uiLayer, svgW)  {
   const topPad = 2;
   const rightPad = 6;
 
-  // ✅ 先清掉舊 legend（避免重疊）
   uiLayer.selectAll("g.curvature-legend").remove();
 
-  // ✅ 跟 hubs 一樣：右上角定位 + 往左推 20px
-  // 但 svgW 有時會是 undefined/0（例如 caller 傳錯參數），所以這裡做防呆。
+  // Position it in the top right corner + push it 20px to the left.
   let W = Number(svgW);
   if (!Number.isFinite(W) || W <= 0) {
     const root = uiLayer.node()?.ownerSVGElement;
@@ -250,7 +248,6 @@ function getChartSize(svgEl, fallbackW = 360, fallbackH = 260) {
   let w = rect?.width ? Math.floor(rect.width) : fallbackW;
   let h = rect?.height ? Math.floor(rect.height) : fallbackH;
 
-  // ✅ 防呆：右側容器常常高度太小（例如 140px），會讓 y 軸標籤擠在一起
   if (!Number.isFinite(w) || w < 240) w = fallbackW;
   if (!Number.isFinite(h) || h < 220) h = fallbackH;
 
@@ -302,7 +299,6 @@ async function renderMap(ctx) {
 
   svg.selectAll("*").remove();
 
-  // ✅ 確保拖曳事件不會被瀏覽器預設手勢吃掉
   svg.style("touch-action", "none");
 
   // 3D-ish globe
@@ -501,7 +497,6 @@ async function renderMap(ctx) {
   svg.call(drag);
 }
 
-// -------------------- Side: scatter --------------------
 // -------------------- Side: scatter + class breakdown --------------------
 async function renderSide(ctx) {
   const root = ctx.sideRoot;
@@ -510,7 +505,7 @@ async function renderSide(ctx) {
   const svgEl1 = root?.querySelector("#curvature-chart-1");
   if (!svgEl1) return;
 
-  // ✅ 針對 Curvature scatter 把 slot 撐高（避免 y 軸擠壓）
+  //Curvature scatter 
   const slot1 = svgEl1.closest?.(".chart-slot");
   if (slot1) {
     slot1.style.height = "220px";
@@ -520,7 +515,7 @@ async function renderSide(ctx) {
   // --- Ensure Chart 2 exists (create if missing) ---
   let svgEl2 = root?.querySelector("#curvature-chart-2");
   if (!svgEl2) {
-    // 找到 chart-1 的 slot，然後在它後面插入一個新的 chart-slot
+
     const slot = svgEl1.closest?.(".chart-slot");
     if (slot) {
       const newSlot = document.createElement("div");
@@ -560,9 +555,6 @@ async function renderSide_origin(ctx) {
   const root = ctx.sideRoot;
   const svgEl = root?.querySelector("#curvature-chart-1");
   if (!svgEl) return;
-
-  // ✅ CSS 的 .chart-slot 預設 height:140px，會把 SVG 視覺壓扁，造成 y 軸標籤擠在一起。
-  // 這裡只針對 Curvature 這張圖，把 slot 撐高。
   const slot = svgEl.closest?.(".chart-slot");
   if (slot) {
     slot.style.height = "220px";
@@ -579,13 +571,12 @@ async function renderSide_origin(ctx) {
 
 function renderScatter(svgEl, routes, mapSvg, routesSel) {
   const { w, h } = getChartSize(svgEl, 360, 260);
-  // ✅ 左邊留更多空間給 y 軸標籤，避免擠壓
   const margin = { top: 44, right: 14, bottom: 62, left: 66 };
   const innerW = w - margin.left - margin.right;
   const innerH = h - margin.top - margin.bottom;
 
   const svg = d3.select(svgEl)
-    .attr("width", w)          // ✅ 改成固定像素，避免 100% + parent=0 高度看不到
+    .attr("width", w)         
     .attr("height", h)
     .attr("viewBox", `0 0 ${w} ${h}`);
 
@@ -620,7 +611,7 @@ function renderScatter(svgEl, routes, mapSvg, routesSel) {
     .call((sel) => sel.selectAll("path,line").attr("stroke", "#e5e7eb"));
 
   g.append("g")
-    // ✅ ticks 少一點 + 字體小一點 + padding 大一點，避免重疊
+    // Fewer ticks, smaller font, and larger padding to avoid overlap.
     .call(
       d3.axisLeft(y)
         .ticks(4)
@@ -660,7 +651,7 @@ function renderScatter(svgEl, routes, mapSvg, routesSel) {
     .on("mouseenter", function (event, d) {
       if (!routesSel) return;
       highlightRoute(routesSel, dots, d.__rid);
-      // ✅ also show the same route detail on the map
+      // also show the same route detail on the map
       if (mapSvg) showTooltipAt(mapSvg, 16, 16, formatRouteTooltip(d));
     })
     .on("mouseleave", function () {
@@ -719,7 +710,7 @@ function renderClassBreakdown(svgEl, routes, routesSel) {
     .attr("y", 34)
     .attr("font-size", 10.5)
     .attr("fill", "#94a3b8")
-    .text(`n = ${total}`);
+    .text(`Top N = ${total}`);
 
   // Layout
   const barX = 10;
@@ -750,7 +741,7 @@ function renderClassBreakdown(svgEl, routes, routesSel) {
       .attr("fill", CLASS_COLORS[it.key])
       .attr("fill-opacity", 0.95)
       .on("mouseenter", () => {
-        // optional: hover 某一段 → 左側 map 淡化其他類
+        // Hover over a section → the map on the left will fade out other classes.
         if (!routesSel) return;
         routesSel
           .attr("stroke", DEFAULT_ROUTE_COLOR)

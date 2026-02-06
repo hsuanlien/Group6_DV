@@ -35,9 +35,9 @@ const HUB_HIGHLIGHT = "#f28c28";
 const HUB_FADE_OPACITY = 0.12;
 const HUB_DEFAULT_OPACITY = 0.8;
 
-const MAX_ROUTES_ON_MAP = 5000; // ✅ show “all routes” but cap to keep smooth
+const MAX_ROUTES_ON_MAP = 5000; // show “all routes” but cap to keep smooth
 const TOP_HUBS_FOR_BAR = 10;
-const HUBS_FOR_MAP = 200; // ✅ show more hubs on map (not just top 60)
+const HUBS_FOR_MAP = 200; // show more hubs on map (not just top 60)
 
 const viewState = {
   hubsTop: [],
@@ -191,11 +191,9 @@ async function renderSide(ctx) {
   const svgEl = root?.querySelector("#hubs-chart-1");
   if (!svgEl) return;
 
-  // ✅ 只改「小圖表格」高度，不動右側大框
-  // 10列 + 標題 + x軸：大約 300~340px 最舒適
   const slot = svgEl.parentElement; // .chart-slot
   if (slot) {
-    slot.style.height = "320px";     // 👈 你也可以 300 / 340 看視覺
+    slot.style.height = "320px";     //  300 or 340 
   }
 
   d3.select(svgEl).selectAll("*").remove();
@@ -231,7 +229,7 @@ function renderHubsBarChart(svgEl, hubs) {
   const xAxisH = 26;            // x 
   const marginRight = 18;
 
-  // left margin：依 label 長度估計
+  // left margin
   const labels = shown.map((d) => {
     const city = d?.airport?.city ? ` (${d.airport.city})` : "";
     return `${d.iata}${city}`;
@@ -244,7 +242,7 @@ function renderHubsBarChart(svgEl, hubs) {
   const innerW = Math.max(10, w - margin.left - margin.right);
   const innerH = Math.max(10, h - margin.top - margin.bottom);
 
-  // 「完整10列需要的高度」（用於scroll內容高度）
+  // Height required for all 10 columns (used for scroll content height)
   const neededH = Math.max(innerH, Math.round(shown.length * rowH));
 
   const svg = d3.select(svgEl)
@@ -266,13 +264,13 @@ function renderHubsBarChart(svgEl, hubs) {
   // ====== main group ======
   const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
 
-  // x scale（用 shown）
+  // x scale（shown）
   const x = d3.scaleLinear()
     .domain([0, d3.max(shown, (d) => d.count) || 1])
     .nice()
     .range([0, innerW]);
 
-  // x axis（固定在底部，不捲動）
+  // x axis
   g.append("g")
     .attr("transform", `translate(0,${innerH})`)
     .call(d3.axisBottom(x).ticks(3))
@@ -280,36 +278,35 @@ function renderHubsBarChart(svgEl, hubs) {
     .call((sel) => sel.selectAll("path,line").attr("stroke", "#e5e7eb"));
 
   // ====== Scrollable plot area via foreignObject ======
-  // 可視高度 = innerH；內容高度 = neededH（>= innerH 時就可捲動）
   const fo = g.append("foreignObject")
-    .attr("x", -margin.left)     // foreignObject 裡我們用 HTML 來包住整個左邊軸＋bar區
+    .attr("x", -margin.left)     // foreignObject :We use HTML to wrap the entire left axis + bar area.
     .attr("y", 0)
-    .attr("width", w)            // 讓它吃整個 SVG 寬（包含左邊 y 軸）
+    .attr("width", w)            
     .attr("height", innerH);
 
-  // 建立 scroll container
+  // build scroll container
   const div = fo.append("xhtml:div")
     .style("width", `${w}px`)
     .style("height", `${innerH}px`)
     .style("overflow-y", "auto")
     .style("overflow-x", "hidden");
 
-  // 內容 SVG（用來畫 y 軸 + bars + values），高度是 neededH
+  // SVG（Used to draw the y-axis + bars + values), the height is neededH
   const innerSvg = div.append("svg")
     .attr("width", w)
     .attr("height", neededH);
 
-  // 在 innerSvg 內建立對應的 group（位置同主圖 margin）
+  // Create the corresponding group within the innerSvg (located in the same position as the main image margin).
   const gg = innerSvg.append("g")
-    .attr("transform", `translate(${margin.left},0)`); // y=0，因為 scroll 內容本身從0開始
+    .attr("transform", `translate(${margin.left},0)`); // y=0
 
-  // y scale：用 neededH 來分配 band
+  // y scale
   const y = d3.scaleBand()
     .domain(shown.map((d) => d.iata))
     .range([0, neededH])
     .padding(paddingBand);
 
-  // y axis（會跟著內容一起捲）
+  // y axis
   const yAxis = d3.axisLeft(y).tickFormat((iata) => {
     const d = shown.find((x) => x.iata === iata);
     const city = d?.airport?.city ? ` (${d.airport.city})` : "";
@@ -333,7 +330,7 @@ function renderHubsBarChart(svgEl, hubs) {
 
   yAxisG.selectAll("path,line").attr("stroke", "#e5e7eb");
 
-  // bars（會跟著內容一起捲）
+  // bars
   const bars = gg.selectAll("rect.bar")
     .data(shown, (d) => d.iata)
     .join("rect")
@@ -347,7 +344,7 @@ function renderHubsBarChart(svgEl, hubs) {
     .on("mouseenter", function (event, d) { highlightHub(d.iata); })
     .on("mouseleave", function () { clearHighlight(); });
 
-  // value labels（空間夠才畫）
+  // value labels
   const showValues = y.bandwidth() >= 12;
   if (showValues) {
     gg.selectAll("text.value")
@@ -368,24 +365,17 @@ function renderHubsBarChart(svgEl, hubs) {
 function rrrrrenderHubsBarChart(svgEl, hubs) {
   const { w, h } = getChartSize(svgEl, 460, 330);
 
-  // ====== ✅ 1) 依照高度，決定最多能塞幾列 ======
-  // 你右側 chart-slot 很矮時，12 列會擠爆
-  const MIN_ROW_PX = 18;       // 每列最小高度（含空隙）
-  const TITLE_SPACE = 26;      // 上方標題占用
-  const XAXIS_SPACE = 26;      // 下方 x 軸占用
+  const MIN_ROW_PX = 18;     
+  const TITLE_SPACE = 26;    
+  const XAXIS_SPACE = 26;      
   const SAFE_PAD = 10;
 
-  // 我們先用一個保守 margin，等算完 left margin 後再更新
   let margin = { top: 28, right: 18, bottom: 28, left: 160 };
 
-  // 可用的 bar 區高度（扣掉 title / x-axis / margins）
   const usableH0 = Math.max(60, h - TITLE_SPACE - XAXIS_SPACE - SAFE_PAD);
   const maxBarsByHeight = Math.max(4, Math.floor(usableH0 / MIN_ROW_PX));
-
-  // 真的要畫的筆數：在 “想畫的 hubs” 與 “高度能容納的數量” 取最小
   const shown = hubs.slice(0, Math.min(hubs.length, maxBarsByHeight));
 
-  // ====== ✅ 2) 依 label 長度自動算左邊 margin（你原本有做，保留） ======
   const labels = shown.map((d) => {
     const city = d?.airport?.city ? ` (${d.airport.city})` : "";
     return `${d.iata}${city}`;
@@ -406,7 +396,7 @@ function rrrrrenderHubsBarChart(svgEl, hubs) {
 
   svg.selectAll("*").remove();
 
-  // ====== ✅ 3) 標題：顯示「目前顯示幾筆」避免使用者誤會 ======
+  // ====== Title: Display "How many records are currently displayed" to avoid user confusion.======
   const total = hubs.length;
   const title = total > shown.length
     ? `Top departing hubs (showing ${shown.length} of ${total})`
@@ -422,18 +412,18 @@ function rrrrrenderHubsBarChart(svgEl, hubs) {
 
   const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
 
-  // ====== ✅ 4) y scale：拉開行距（padding 變大），提升可讀性 ======
+  // ====== Increase line spacing (increase padding) to improve readability ======
   const y = d3.scaleBand()
     .domain(shown.map((d) => d.iata))
     .range([0, innerH])
-    .padding(0.35); // 👈 原本 0.25，拉開列距
+    .padding(0.35); 
 
   const x = d3.scaleLinear()
     .domain([0, d3.max(shown, (d) => d.count) || 1])
     .nice()
     .range([0, innerW]);
 
-  // y axis：字稍微小一點 + truncate + tooltip
+  // y axis
   const yAxis = d3.axisLeft(y).tickFormat((iata) => {
     const d = shown.find((x) => x.iata === iata);
     const city = d?.airport?.city ? ` (${d.airport.city})` : "";
@@ -444,7 +434,7 @@ function rrrrrenderHubsBarChart(svgEl, hubs) {
 
   yAxisG.selectAll("text")
     .attr("fill", "#374151")
-    .attr("font-size", 10); // 👈 比原本 11 再小一點，避免擠
+    .attr("font-size", 10); 
 
   yAxisG.selectAll(".tick")
     .append("title")
@@ -477,7 +467,7 @@ function rrrrrenderHubsBarChart(svgEl, hubs) {
     .on("mouseenter", function (event, d) { highlightHub(d.iata); })
     .on("mouseleave", function () { clearHighlight(); });
 
-  // value labels（如果空間太小就不畫，避免擠在一起）
+
   const showValues = y.bandwidth() >= 12;
 
   if (showValues) {
@@ -542,7 +532,7 @@ function ensureMapTooltip(svg) {
   tip = svg.append("g")
     .attr("class", "_hubTooltip")
     .style("display", "none")
-    .style("pointer-events", "none"); // ✅ 不要擋到 hover
+    .style("pointer-events", "none"); 
 
   tip.append("rect")
     .attr("rx", 8)
@@ -561,7 +551,7 @@ function ensureMapTooltip(svg) {
 
 function showMapTooltip(svg, event, text) {
   const tip = ensureMapTooltip(svg);
-  tip.raise(); // ✅ 永遠浮在最上層
+  tip.raise(); 
 
   const t = tip.select("text");
   t.selectAll("tspan").remove();
@@ -588,7 +578,7 @@ function moveMapTooltip(svg, event) {
   const tip = svg.select("g._hubTooltip");
   if (tip.empty()) return;
 
-  tip.raise(); // ✅ 移動時也保持最上層
+  tip.raise(); 
 
   const bounds = svg.property("__sphereBounds__");   // [[x0,y0],[x1,y1]]
   const legendBBox = svg.property("__legendBBox__"); // {x,y,w,h}
@@ -596,30 +586,25 @@ function moveMapTooltip(svg, event) {
 
   const [mx, my] = d3.pointer(event, svg.node());
 
-  // tooltip 尺寸（已經有 rect）
+  // tooltip size
   const rect = tip.select("rect").node().getBBox();
   const tw = rect.width;
   const th = rect.height;
 
-  // 初始位置：滑鼠右下
+  // init
   let x = mx + 12;
   let y = my + 12;
 
-  // ✅ clamp 到 sphere 內（避免跑出球外）
   if (bounds) {
     const [[x0, y0], [x1, y1]] = bounds;
 
-    // 右邊不夠 → 改放左邊
     if (x + tw + pad > x1) x = mx - tw - 12;
-    // 下方不夠 → 改放上面
     if (y + th + pad > y1) y = my - th - 12;
 
-    // 再做一次硬 clamp
     x = Math.max(x0 + pad, Math.min(x, x1 - tw - pad));
     y = Math.max(y0 + pad, Math.min(y, y1 - th - pad));
   }
 
-  // ✅ 避開 legend（如果 tooltip 跟 legend 重疊，就往左/上推）
   if (legendBBox) {
     const overlap =
       x < legendBBox.x + legendBBox.w &&
@@ -628,9 +613,7 @@ function moveMapTooltip(svg, event) {
       y + th > legendBBox.y;
 
     if (overlap) {
-      // 優先往左推
       x = legendBBox.x - tw - 10;
-      // 如果左邊又不夠，就往上
       if (bounds) {
         const [[x0, y0]] = bounds;
         if (x < x0 + pad) {
@@ -664,10 +647,10 @@ function drawHubLegend(svg, geoPath, maxCount, rScale) {
   const boxH = 92;
   // @@@ here---------------------------------------------------------------
   // how tight to the panel edges
-  const topPad = 2;     // 👈 closer to upper border
-  const rightPad = 6;   // 👈 closer to right border
+  const topPad = 2;     // closer to upper border
+  const rightPad = 6;   // closer to right border
   svg.selectAll("g.hub-legend").remove();
-  // ✅ use the SVG viewport instead of sphere bounds
+  //  use the SVG viewport instead of sphere bounds
   const width = +svg.attr("width");
   const x = Math.max(0, width - boxW - rightPad - 20);
   const y = Math.max(0, topPad);
@@ -700,7 +683,7 @@ function drawHubLegend(svg, geoPath, maxCount, rScale) {
     .attr("fill", "#6b7280")
     .text(`Max hub = ${maxCount.toLocaleString()} departures`);
 
-  // ✅ use explicit “example sizes” labels
+  // use explicit “example sizes” labels
   const samples = [
     { label: "25%", value: Math.round(maxCount * 0.25) },
     { label: "60%", value: Math.round(maxCount * 0.6) },
@@ -730,7 +713,7 @@ function drawHubLegend(svg, geoPath, maxCount, rScale) {
     cx += 70;
   });
 
-  // ✅ 記錄 legend 的 bbox（供 tooltip 避讓）
+  // record legend 
   const lb = g.node().getBBox();
   const t = g.attr("transform"); // translate(x,y)
   const m = /translate\(([-\d.]+),\s*([-\d.]+)\)/.exec(t);

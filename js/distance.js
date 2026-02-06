@@ -45,8 +45,7 @@ async function loadWorldLayers() {
 }
 
 /**
- * ✅ Shared view state (for cross-highlighting)
- * renderMap() 和 renderSide() 分開呼叫，所以要靠 module-level state 共享 selection
+ * Shared view state (for cross-highlighting)
  */
 const viewState = {
   routesForView: [],      // SAME routes used by map & charts
@@ -56,7 +55,7 @@ const viewState = {
   histRectsSel: null,     // selection of histogram rects
   shareSegSel: null,      // selection of share segments
 
-  // ✅ NEW: brush state
+  // NEW: brush state
   histXScale: null,       // x scale used in histogram (for invert)
   brushRangeKm: null,     // [minKm, maxKm] or null
 };

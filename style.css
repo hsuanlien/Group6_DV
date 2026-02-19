@@ -1,5 +1,6 @@
 :root {
     --sky: #8ec5ff;
+    --sky-light: #dbecff;
     --sky-dark: #5aa7ff;
     --bg: #f6f8fb;
     --panel: #ffffff;
@@ -18,7 +19,7 @@ body {
     margin: 0;
     font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
     color: var(--text);
-    background: var(--bg);
+    background: var(--sky-light);
 }
 
 /* --- Top bar --- */
@@ -78,15 +79,15 @@ body {
 
 /* --- Viz layout: left map 5/9, right charts 3/9 --- */
 .viz-layout {
-  display: grid;
-  grid-template-columns: 5fr 3fr;
-  gap: 14px;
+    display: grid;
+    grid-template-columns: 5fr 3fr;
+    gap: 14px;
 
-  /* ✅ 左右同高 */
-  align-items: stretch;
+    /* ✅ 左右同高 */
+    align-items: stretch;
 
-  /* ✅ 統一整個視覺區高度：左右都跟這個高度走 */
-  height: clamp(560px, 70vh, 780px);
+    /* ✅ 統一整個視覺區高度：左右都跟這個高度走 */
+    height: clamp(560px, 70vh, 780px);
 }
 
 
@@ -120,7 +121,8 @@ body {
 .panel-body {
     padding: 12px;
     flex: 1 1 auto;
-    min-height: 0; /* 讓內部元素可正確計算高度 */
+    min-height: 0;
+    /* 讓內部元素可正確計算高度 */
 }
 
 /* fixed map size across all functions */
@@ -130,7 +132,7 @@ body {
     /* height: clamp(500px, 60vh, 620px); */
     /* height: 520px;
     /* <- fixed map height */
-    /* width: 100%; */ 
+    /* width: 100%; */
 }
 
 .map-svg {
@@ -150,8 +152,8 @@ body {
 }
 
 #map-svg-routing .country {
-  fill: #eef5ff;
-  stroke: #c7daf7;
+    fill: #eef5ff;
+    stroke: #c7daf7;
 }
 
 /* right-side stacked charts */
@@ -226,14 +228,15 @@ body {
 }
 
 .is-hidden {
-  display: none !important;
+    display: none !important;
 }
 
 .obs-view {
-  display: none;
+    display: none;
 }
+
 .obs-view.is-visible {
-  display: block;
+    display: block;
 }
 
 .obs-box {
@@ -310,13 +313,16 @@ body {
 
 .route-stack {
     margin: 0;
-    padding-left: 18px;
+    padding-left: 30px;
     border: 1px solid var(--border);
     border-radius: 12px;
     background: #fff;
     min-height: 120px;
+    max-height: 250px;
     padding-top: 10px;
     padding-bottom: 10px;
+    overflow-y:auto;
+    scroll-behavior: smooth;
 }
 
 .route-stack li {
@@ -333,12 +339,13 @@ body {
 
 /* routing europe basemap */
 #map-svg-routing .country {
-  fill: #f3f7ff;
-  stroke: #c7daf7;
-  stroke-width: 0.8;
+    fill: #f3f7ff;
+    stroke: #c7daf7;
+    stroke-width: 0.8;
 }
+
 #map-svg-routing .graticule {
-  fill: none;
-  stroke: rgba(0,0,0,0.08);
-  stroke-width: 0.6;
+    fill: none;
+    stroke: rgba(0, 0, 0, 0.08);
+    stroke-width: 0.6;
 }

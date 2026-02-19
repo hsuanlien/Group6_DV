@@ -355,6 +355,7 @@ function renderRouteStack(ctx, store) {
             li.style.fontWeight = "700";
         }
         ol.appendChild(li);
+        ol.scrollTop = ol.scrollHeight;
     }
 
     if (routingState.isComplete) {
@@ -366,6 +367,7 @@ function renderRouteStack(ctx, store) {
         done.style.listStyle = "none";
         done.style.paddingLeft = "0";
         ol.appendChild(done);
+        ol.scrollTop = ol.scrollHeight;
 
         // zoom to show the entire planned route
         zoomToPlannedRoute(ctx, store);
@@ -487,8 +489,18 @@ function updateRoutingMap(ctx, store) {
         .attr("cy", (d) => projection([d.lon, d.lat])[1])
         .attr("r", (d) => (d.iata === routingState.currentIATA && !routingState.isComplete ? 2 : 1.5))
         .attr("fill", (d) => {
-            if (routingState.isComplete) return "red";
-            return d.iata === routingState.currentIATA ? "black" : "red";
+            const iata = d.iata;
+            const isHome = iata === routingState.homeIATA;
+            const isCurrent = iata === routingState.currentIATA;
+
+            if (routingState.isComplete) {
+                if (isCurrent) return "blue"; // completed (back to home)
+                return "blue";                // all planned stops blue
+            }
+
+            if (isHome) return "red";
+            if (isCurrent) return "black";
+            return "blue";                    // previously chosen / locked stops                     // other airports in plan (kept black)
         })
         .style("cursor", (d) => {
             // origin can't be canceled by node dblclick; others can
